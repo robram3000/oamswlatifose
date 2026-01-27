@@ -1,0 +1,6 @@
+@oamswlatifose.Server_HostAddress = http://localhost:5201
+
+GET {{oamswlatifose.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
