@@ -1,18 +1,4 @@
 <h1 align="center"> Online Attendance Monitoring System with Location and Time Integration for off-Site Employees
  </h1><div align="center"> <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=3498db&center=true&vCenter=true&width=600&lines=Complete+Workforce+Management+Solution;Employee+Tracking+%26+Attendance;Role-Based+Access+Control;Real-Time+Analytics+%26+Reporting" alt="Typing SVG" /> </div>
  
-<div align="center">
-Authentication	Authorization	Audit & Logging
-https://img.shields.io/badge/JWT_Authentication-Secure-brightgreen?style=flat-square	https://img.shields.io/badge/Role_Based_Access-5_Levels-blue?style=flat-square	https://img.shields.io/badge/Audit_Logging-Comprehensive-orange?style=flat-square
-• Token-based Auth
-• Refresh Tokens
-• Password Encryption
-• Session Management	• Administrator
-• Manager
-• HR
-• Supervisor
-• Employee	• Login/Logout Tracking
-• User Activity Logs
-• System Events
-• Error Monitoring
-</div>
+<div align="center"><table> <tr> <th>Frontend</th> <th>Backend</th> <th>Database</th> <th>Tools</th> </tr> <tr> <td> <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React"> <br> <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript"> <br> <img src="https://img.shields.io/badge/Sass-CC6699?style=for-the-badge&logo=sass&logoColor=white" alt="Sass"> <br> <img src="https://img.shields.io/badge/React_Router-CA4245?style=for-the-badge&logo=react-router&logoColor=white" alt="React Router"> </td> <td> <img src="https://img.shields.io/badge/.NET-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET"> <br> <img src="https://img.shields.io/badge/C%23-239120?style=for-the-badge&logo=c-sharp&logoColor=white" alt="C#"> <br> <img src="https://img.shields.io/badge/JWT-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white" alt="JWT"> <br> <img src="https://img.shields.io/badge/Swagger-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Swagger"> </td> <td> <img src="https://img.shields.io/badge/SQL_Server-CC2927?style=for-the-badge&logo=microsoft-sql-server&logoColor=white" alt="SQL Server"> <br> <img src="https://img.shields.io/badge/EF_Core-512BD4?style=for-the-badge&logo=.net&logoColor=white" alt="Entity Framework"> </td> <td> <img src="https://img.shields.io/badge/VS_Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white" alt="VS Code"> <br> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> <br> <img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" alt="Git"> <br> <img src="https://img.shields.io/badge/Postman-FF6C37?style=for-the-badge&logo=postman&logoColor=white" alt="Postman"> </td> </tr> </table></div>
