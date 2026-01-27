@@ -1,14 +1,1 @@
-Employee Management System
-<div align="center">
-https://via.placeholder.com/1200x400/3498db/ffffff?text=Employee+Management+System
-
-A Complete Solution for Modern Workforce Management
-
-https://img.shields.io/badge/React-18.2.0-61DAFB?style=flat&logo=react&logoColor=white
-https://img.shields.io/badge/.NET-8.0-512BD4?style=flat&logo=dotnet&logoColor=white
-https://img.shields.io/badge/SQL%2520Server-2022-CC2927?style=flat&logo=microsoft-sql-server&logoColor=white
-https://img.shields.io/badge/License-MIT-green?style=flat
-
-Live Demo • Documentation • Installation • Features
-
-</div>
+<h1 align="center"> 🏢 Employee Management System 🏢 </h1><div align="center"> <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=3498db&center=true&vCenter=true&width=600&lines=Complete+Workforce+Management+Solution;Employee+Tracking+%26+Attendance;Role-Based+Access+Control;Real-Time+Analytics+%26+Reporting" alt="Typing SVG" /> </div>
