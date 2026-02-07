@@ -59,6 +59,8 @@ namespace oamswlatifose.Server.Model.security
 
         public DateTime? PasswordResetTokenExpires { get; set; }
 
+
+        // Foreign key realtion ship
         public virtual EMRoleBasedAccessControl Role { get; set; }
         public virtual EMEmployees Employee { get; set; }
         public virtual ICollection<EMSession> Sessions { get; set; }

@@ -7,12 +7,15 @@
     <SpaRoot>..\oamswlatifose.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
     <SpaProxyServerUrl>https://localhost:51591</SpaProxyServerUrl>
+    <UserSecretsId>2904fd62-e3da-4c1a-853a-e01954409e3d</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="16.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SpaProxy">
       <Version>8.*-*</Version>
     </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
@@ -24,9 +27,8 @@
 
   <ItemGroup>
     <Folder Include="Controllers\" />
-    <Folder Include="Data\" />
-    <Folder Include="Services\" />
-    <Folder Include="Repository\" />
+    <Folder Include="DTO\smtp\" />
+    <Folder Include="Services\Security\" />
   </ItemGroup>
 
 </Project>
