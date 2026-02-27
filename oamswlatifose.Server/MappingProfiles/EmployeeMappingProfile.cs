@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using oamswlatifose.Server.DTO.Employee;
 using oamswlatifose.Server.Model.user;
 
 namespace oamswlatifose.Server.MappingProfiles
@@ -34,9 +35,10 @@ namespace oamswlatifose.Server.MappingProfiles
                 .ForMember(dest => dest.AttendanceCount,
                     opt => opt.MapFrom(src => src.Attendances != null ? src.Attendances.Count() : 0))
                 .ForMember(dest => dest.CreatedAtFormatted,
-                    opt => opt.MapFrom(src => src.CreatedAt.HasValue ? src.CreatedAt.Value.ToString("yyyy-MM-dd HH:mm") : null))
+                    opt => opt.MapFrom(src => src.CreatedAt.ToString("yyyy-MM-dd HH:mm"))) // Remove HasValue check
                 .ForMember(dest => dest.UpdatedAtFormatted,
-                    opt => opt.MapFrom(src => src.UpdatedAt.HasValue ? src.UpdatedAt.Value.ToString("yyyy-MM-dd HH:mm") : null));
+                    opt => opt.MapFrom(src => src.UpdatedAt.ToString("yyyy-MM-dd HH:mm"))); // Remove HasValue check
+
 
             // Map Employee entity to lightweight summary DTO for list views
             CreateMap<EMEmployees, EmployeeSummaryDTO>()
@@ -59,7 +61,7 @@ namespace oamswlatifose.Server.MappingProfiles
             // Map update DTO to existing Employee entity
             CreateMap<UpdateEmployeeDTO, EMEmployees>()
                 .ForMember(dest => dest.Id, opt => opt.Ignore())
-                .ForMember(dest => dest.EmployeeID, opt => opt.Ignore()) // Prevent changing employee ID
+                .ForMember(dest => dest.EmployeeID, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UserAccount, opt => opt.Ignore())

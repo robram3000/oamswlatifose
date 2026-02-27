@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using oamswlatifose.Server.DTO.attendances;
 using oamswlatifose.Server.Model.occurance;
 
 namespace oamswlatifose.Server.MappingProfiles

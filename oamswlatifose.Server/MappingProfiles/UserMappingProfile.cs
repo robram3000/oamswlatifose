@@ -1,4 +1,6 @@
 ﻿using AutoMapper;
+using oamswlatifose.Server.DTO.Auth;
+using oamswlatifose.Server.DTO.User;
 using oamswlatifose.Server.Model.security;
 
 namespace oamswlatifose.Server.MappingProfiles
