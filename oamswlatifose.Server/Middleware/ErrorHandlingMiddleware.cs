@@ -49,16 +49,7 @@ namespace oamswlatifose.Server.Middleware
 
             response.StatusCode = statusCode;
 
-            var errorResponse = new
-            {
-                Success = false,
-                Message = message,
-                Errors = detailedErrors,
-                CorrelationId = correlationId,
-                Timestamp = DateTime.UtcNow,
-                Path = context.Request.Path,
-                Method = context.Request.Method
-            };
+            object errorResponse;
 
             if (_env.IsDevelopment())
             {
@@ -71,11 +62,25 @@ namespace oamswlatifose.Server.Middleware
                 {
                     devErrors.Add($"Inner Exception: {ex.InnerException.Message}");
                 }
+
                 errorResponse = new
                 {
                     Success = false,
                     Message = message,
-                    Errors = devErrors,
+                    Errors = devErrors, // This is now List<string> instead of string[]
+                    CorrelationId = correlationId,
+                    Timestamp = DateTime.UtcNow,
+                    Path = context.Request.Path,
+                    Method = context.Request.Method
+                };
+            }
+            else
+            {
+                errorResponse = new
+                {
+                    Success = false,
+                    Message = message,
+                    Errors = detailedErrors,
                     CorrelationId = correlationId,
                     Timestamp = DateTime.UtcNow,
                     Path = context.Request.Path,
@@ -107,11 +112,12 @@ namespace oamswlatifose.Server.Middleware
                 InvalidOperationException => (400, "The operation could not be completed",
                     new[] { ex.Message }),
 
-                DbUpdateException => (500, "A database error occurred while processing your request",
-                    new[] { _env.IsDevelopment() ? ex.Message : "Please try again later" }),
-
+                // Order matters - put more specific exceptions first
                 DbUpdateConcurrencyException => (409, "The data was modified by another user",
                     new[] { "Please refresh and try again" }),
+
+                DbUpdateException => (500, "A database error occurred while processing your request",
+                    new[] { _env.IsDevelopment() ? ex.Message : "Please try again later" }),
 
                 _ => (500, "An unexpected error occurred while processing your request",
                     new[] { _env.IsDevelopment() ? ex.Message : "Please contact support if the issue persists" })
