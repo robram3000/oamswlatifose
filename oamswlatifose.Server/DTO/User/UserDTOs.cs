@@ -12,6 +12,16 @@ namespace oamswlatifose.Server.DTO.User
         public string Email { get; set; }
         public int RoleId { get; set; }
         public string RoleName { get; set; }
+
+        public string PasswordHash { get; set; }  
+        
+        public string PasswordSalt  { get; set; }
+
+        public string PasswordResetToken { get; set; }
+
+        public int PasswordResetTokenExpires { get; set; } = 10;
+
+   
         public Dictionary<string, bool> RolePermissions { get; set; }
         public int? EmployeeId { get; set; }
         public string EmployeeName { get; set; }
@@ -24,6 +34,7 @@ namespace oamswlatifose.Server.DTO.User
         public int LockoutRemainingMinutes { get; set; }
         public string AccountStatus { get; set; }
         public DateTime CreatedAt { get; set; }
+
         public string CreatedAtFormatted { get; set; }
     }
 
@@ -59,7 +70,7 @@ namespace oamswlatifose.Server.DTO.User
         [Required(ErrorMessage = "Password is required")]
         [StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be between 8 and 100 characters")]
         [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$",
-            ErrorMessage = "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character")]
+         ErrorMessage = "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character")]
         public string Password { get; set; }
 
         [Required(ErrorMessage = "Confirm password is required")]
