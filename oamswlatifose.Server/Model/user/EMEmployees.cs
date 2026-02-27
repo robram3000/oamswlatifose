@@ -49,8 +49,14 @@ namespace oamswlatifose.Server.Model.user
         [Column(TypeName = "nvarchar(100)")]
         public string City { get; set; }
 
- 
+
+        public DateTime CreatedAt { get; set; }
+
+        public DateTime UpdatedAt { get; set; } 
+
+
         public virtual EMAuthorizeruser UserAccount { get; set; }
         public virtual ICollection<EMEmployees> Attendances { get; set; }
+
     }
 }
