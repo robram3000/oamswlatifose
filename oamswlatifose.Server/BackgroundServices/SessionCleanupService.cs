@@ -50,7 +50,7 @@ namespace oamswlatifose.Server.BackgroundServices
             using var scope = _serviceProvider.CreateScope();
             var sessionRepository = scope.ServiceProvider.GetRequiredService<ISessionManagementCommandRepository>();
 
-            var retentionThreshold = DateTime.UtcNow.AddDays(-7); // Keep last 7 days
+            var retentionThreshold = DateTime.UtcNow.AddDays(-7); 
             var deletedCount = await sessionRepository.CleanupExpiredSessionsAsync(retentionThreshold);
 
             _logger.LogInformation("Cleaned up {DeletedCount} expired sessions older than {RetentionThreshold}",
