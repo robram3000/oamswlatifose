@@ -14,6 +14,7 @@ WORKDIR /src
 COPY oamswlatifose.Server/oamswlatifose.Server.csproj ./oamswlatifose.Server/
 RUN dotnet restore ./oamswlatifose.Server/oamswlatifose.Server.csproj
 
+# bust-cache: 20260620090435 (migration regenerated without nvarchar)
 # Copy source, then drop Vite output into wwwroot
 COPY oamswlatifose.Server/ ./oamswlatifose.Server/
 COPY --from=frontend /app/dist/ ./oamswlatifose.Server/wwwroot/
