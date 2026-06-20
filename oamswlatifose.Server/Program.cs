@@ -44,10 +44,10 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-
-    // Apply migrations + seed a login-able demo account (employee + Admin user + schedule + branch).
-    await app.SeedDevAsync();
 }
+
+// Always run migrations and seed demo accounts (idempotent — safe to run on every startup).
+await app.SeedDevAsync();
 
 if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
