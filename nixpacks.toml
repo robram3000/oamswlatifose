@@ -1,0 +1,18 @@
+[phases.install]
+cmds = ["cd oamswlatifose.client && npm ci"]
+
+[phases.build]
+cmds = [
+    # Build the React frontend
+    "cd oamswlatifose.client && npm run build",
+
+    # Copy Vite output into wwwroot so ASP.NET Core serves it
+    "mkdir -p oamswlatifose.Server/wwwroot",
+    "cp -r oamswlatifose.client/dist/. oamswlatifose.Server/wwwroot/",
+
+    # Publish the .NET backend
+    "dotnet publish oamswlatifose.Server/oamswlatifose.Server.csproj -c Release -o /app/publish"
+]
+
+[start]
+cmd = "ASPNETCORE_HTTP_PORTS=$PORT dotnet /app/publish/oamswlatifose.Server.dll"

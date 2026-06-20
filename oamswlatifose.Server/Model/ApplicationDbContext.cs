@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using oamswlatifose.Server.Model.branches;
 using oamswlatifose.Server.Model.security;
 using oamswlatifose.Server.Model.smtp;
 using oamswlatifose.Server.Model.occurance;
@@ -20,6 +21,11 @@ namespace oamswlatifose.Server.Model
 
         // Occurrence entities
         public DbSet<EMAttendance> EMAttendance { get; set; }
+        public DbSet<EMWorkSchedule> EMWorkSchedules { get; set; }
+        public DbSet<EMAttendanceOtp> EMAttendanceOtps { get; set; }
+
+        // Branch geofences
+        public DbSet<EMBranch> EMBranches { get; set; }
 
         // SMTP entities
         public DbSet<EMEmaillogs> EMEmaillogs { get; set; }
@@ -178,6 +184,44 @@ namespace oamswlatifose.Server.Model
                     .HasPrecision(5, 2);
             });
 
+            // EMWorkSchedule Configuration — one active schedule per employee.
+            modelBuilder.Entity<EMWorkSchedule>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasIndex(e => e.EmployeeId).IsUnique();
+
+                entity.Property(e => e.WorkDays).HasMaxLength(50);
+
+                entity.HasOne(e => e.Employee)
+                    .WithMany()
+                    .HasForeignKey(e => e.EmployeeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // EMAttendanceOtp Configuration — short-lived clock-in/out verification codes.
+            modelBuilder.Entity<EMAttendanceOtp>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasIndex(e => new { e.EmployeeId, e.Purpose, e.IsUsed });
+                entity.HasIndex(e => e.ExpiresAt);
+
+                entity.Property(e => e.Code).HasMaxLength(10);
+                entity.Property(e => e.Purpose).HasMaxLength(20);
+                entity.Property(e => e.Email).HasMaxLength(255);
+                entity.Property(e => e.WorkLocation).HasMaxLength(20);
+            });
+
+            // EMBranch Configuration — office geofences.
+            modelBuilder.Entity<EMBranch>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.IsActive);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.Address).HasMaxLength(250);
+            });
+
             // EMEmaillogs Configuration
             modelBuilder.Entity<EMEmaillogs>(entity =>
             {
@@ -231,8 +275,8 @@ namespace oamswlatifose.Server.Model
                 new EMRoleBasedAccessControl
                 {
                     Id = 2,
-                    RoleName = "Manager",
-                    Description = "Manager level access",
+                    RoleName = "HR",
+                    Description = "HR — manage schedules, branches and attendance",
                     CanViewEmployees = true,
                     CanEditEmployees = true,
                     CanDeleteEmployees = false,
@@ -244,7 +288,7 @@ namespace oamswlatifose.Server.Model
                     CanAccessAdminPanel = false,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
-                }, 
+                },
                 new EMRoleBasedAccessControl
                 {
                     Id = 3,

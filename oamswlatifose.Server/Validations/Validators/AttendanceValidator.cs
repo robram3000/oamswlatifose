@@ -1,4 +1,5 @@
-﻿using oamswlatifose.Server.DTO.attendances;
+﻿using FluentValidation;
+using oamswlatifose.Server.DTO.attendances;
 
 namespace oamswlatifose.Server.Validations.Validators
 {
@@ -116,6 +117,43 @@ namespace oamswlatifose.Server.Validations.Validators
             RuleFor(x => x.ReportFormat)
                 .Must(format => new[] { "JSON", "PDF", "EXCEL", "CSV" }.Contains(format))
                 .WithMessage("Invalid report format");
+        }
+    }
+
+    public class UpdateAttendanceValidator : AbstractValidator<UpdateAttendanceDTO>
+    {
+        public UpdateAttendanceValidator()
+        {
+            // Time validation
+            RuleFor(x => x.TimeIn)
+                .Must((dto, timeIn) => !timeIn.HasValue || !dto.TimeOut.HasValue || timeIn.Value < dto.TimeOut.Value)
+                .WithMessage("Time in must be before time out")
+                .When(x => x.TimeIn.HasValue && x.TimeOut.HasValue);
+
+            RuleFor(x => x.TimeOut)
+                .Must((dto, timeOut) => !timeOut.HasValue || !dto.TimeIn.HasValue || timeOut.Value > dto.TimeIn.Value)
+                .WithMessage("Time out must be after time in")
+                .When(x => x.TimeIn.HasValue && x.TimeOut.HasValue);
+
+            // Status validation
+            RuleFor(x => x.Status)
+                .MaximumLength(50).WithMessage("Status cannot exceed 50 characters")
+                .Must(status => string.IsNullOrEmpty(status) ||
+                    new[] { "Present", "Absent", "Late", "Half-Day", "Holiday", "Leave" }.Contains(status))
+                .WithMessage("Status must be one of: Present, Absent, Late, Half-Day, Holiday, Leave")
+                .When(x => !string.IsNullOrEmpty(x.Status));
+
+            // Shift validation
+            RuleFor(x => x.Shift)
+                .MaximumLength(10).WithMessage("Shift cannot exceed 10 characters")
+                .Must(shift => string.IsNullOrEmpty(shift) ||
+                    new[] { "Morning", "Afternoon", "Evening", "Night" }.Contains(shift))
+                .WithMessage("Shift must be one of: Morning, Afternoon, Evening, Night")
+                .When(x => !string.IsNullOrEmpty(x.Shift));
+
+            // Remarks validation
+            RuleFor(x => x.Remarks)
+                .MaximumLength(500).WithMessage("Remarks cannot exceed 500 characters");
         }
     }
 }

@@ -36,15 +36,15 @@ namespace oamswlatifose.Server.Model.security
         public bool IsRevoked { get; set; }
 
         [MaxLength(255)]
-        public string RevokedReason { get; set; }
+        public string? RevokedReason { get; set; }
 
         public DateTime? RevokedAt { get; set; }
 
         [MaxLength(45)]
-        public string IPAddress { get; set; }
+        public string? IPAddress { get; set; }
 
         [MaxLength(500)]
-        public string UserAgent { get; set; }
+        public string? UserAgent { get; set; }
 
         public virtual EMAuthorizeruser User { get; set; }
     }

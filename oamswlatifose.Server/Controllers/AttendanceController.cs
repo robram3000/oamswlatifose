@@ -36,15 +36,96 @@ namespace oamswlatifose.Server.Controllers
     public class AttendanceController : BaseApiController
     {
         private readonly IAttendanceService _attendanceService;
+        private readonly IAttendanceVerificationService _verificationService;
         private readonly ILogger<AttendanceController> _logger;
 
         public AttendanceController(
             IAttendanceService attendanceService,
+            IAttendanceVerificationService verificationService,
             ILogger<AttendanceController> logger)
         {
             _attendanceService = attendanceService ?? throw new ArgumentNullException(nameof(attendanceService));
+            _verificationService = verificationService ?? throw new ArgumentNullException(nameof(verificationService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
+
+        #region OTP-Verified Clock-In
+
+        /// <summary>
+        /// Step 1 of the verified clock-in: captures the current time and emails a one-time
+        /// code to the employee. The clock-in is NOT recorded yet — call <see cref="VerifyClockIn"/>
+        /// with the code to commit it.
+        /// </summary>
+        /// <returns>Masked email + expiry so the UI can prompt for the code.</returns>
+        /// <response code="200">Code emailed</response>
+        /// <response code="400">No linked employee, already clocked in, or email failed</response>
+        [HttpPost("clock-in/request-otp")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> RequestClockInOtp([FromBody] RequestClockInOtpDTO dto)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _verificationService.RequestClockInOtpAsync(
+                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress());
+                if (!result.IsSuccess)
+                    return BadRequest(result);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error requesting clock-in OTP for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceOtpRequestResultDTO>.FromException(
+                    ex, "Failed to send verification code"));
+            }
+        }
+
+        /// <summary>
+        /// Step 2 of the verified clock-in: validates the emailed code and records the
+        /// attendance, graded Present/Late against the employee's work schedule.
+        /// </summary>
+        /// <param name="dto">The code the employee received by email.</param>
+        /// <returns>The recorded attendance with its computed status.</returns>
+        /// <response code="200">Clock-in recorded</response>
+        /// <response code="400">Invalid/expired code or already clocked in</response>
+        [HttpPost("clock-in/verify")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> VerifyClockIn([FromBody] VerifyAttendanceOtpDTO dto)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceResponseDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _verificationService.VerifyClockInAsync(
+                    employeeId, dto.OtpCode, GetDeviceInfo(), GetClientIpAddress());
+
+                if (!result.IsSuccess)
+                    return BadRequest(result);
+
+                _logger.LogInformation("Employee {EmployeeId} completed OTP clock-in", employeeId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying clock-in for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceResponseDTO>.FromException(
+                    ex, "Failed to verify clock-in"));
+            }
+        }
+
+        #endregion
 
         #region Employee Self-Service Endpoints
 

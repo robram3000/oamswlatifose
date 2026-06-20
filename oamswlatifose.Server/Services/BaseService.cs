@@ -145,11 +145,6 @@ namespace oamswlatifose.Server.Services
                     result.ExecutionTimeMs = stopwatch.ElapsedMilliseconds;
                     result.CorrelationId = correlationId;
 
-                    _logger.LogDebug(
-                        "Completed operation: {OperationName} in {ElapsedMs}ms with success: {Success}",
-                        operationName,
-                        stopwatch.ElapsedMilliseconds,
-                        result.Success);
 
                     return result;
                 }
@@ -200,11 +195,7 @@ namespace oamswlatifose.Server.Services
                     result.ExecutionTimeMs = stopwatch.ElapsedMilliseconds;
                     result.CorrelationId = correlationId;
 
-                    _logger.LogDebug(
-                        "Completed operation: {OperationName} in {ElapsedMs}ms with success: {Success}",
-                        operationName,
-                        stopwatch.ElapsedMilliseconds,
-                        result.Success);
+             
 
                     return result;
                 }
@@ -271,7 +262,7 @@ namespace oamswlatifose.Server.Services
         /// </summary>
         protected ServiceResponse<T> SuccessResponse<T>(T data, string message = null)
         {
-            return ServiceResponse<T>.Success(data, message);
+            return ServiceResponse<T>.SuccessResult(data, message);
         }
 
         /// <summary>
@@ -279,7 +270,7 @@ namespace oamswlatifose.Server.Services
         /// </summary>
         protected ServiceResponse<T> FailureResponse<T>(string message, IEnumerable<string> errors = null)
         {
-            return ServiceResponse<T>.Failure(message, errors);
+            return ServiceResponse<T>.FailureResult(message, errors);
         }
 
         /// <summary>
@@ -288,7 +279,7 @@ namespace oamswlatifose.Server.Services
         protected ServiceResponse<T> ValidationErrorResponse<T>(FluentValidation.Results.ValidationResult validationResult)
         {
             var errors = validationResult.Errors.Select(e => e.ErrorMessage);
-            return ServiceResponse<T>.Failure("Validation failed", errors);
+            return ServiceResponse<T>.FailureResult("Validation failed", errors);
         }
     }
 }

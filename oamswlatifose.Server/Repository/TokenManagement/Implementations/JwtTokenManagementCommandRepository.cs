@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.security;
+using oamswlatifose.Server.Repository.TokenManagement.Interfaces;
 
 namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
 {
@@ -63,7 +64,7 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
             token.CreatedAt = DateTime.UtcNow;
             token.IsRevoked = false;
 
-            await _context.EMJWTs.AddAsync(token);
+            await _context.EMJWT.AddAsync(token);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation($"Created JWT token for user {token.UserId}, expires at {token.ExpiresAt}");
@@ -80,7 +81,7 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
         /// <exception cref="KeyNotFoundException">Thrown when no token exists with the specified Id</exception>
         public async Task<bool> RevokeTokenAsync(int tokenId, string revokedReason)
         {
-            var token = await _context.EMJWTs
+            var token = await _context.EMJWT
                 .FirstOrDefaultAsync(t => t.Id == tokenId);
             if (token == null)
                 throw new KeyNotFoundException($"Token with ID {tokenId} not found");
@@ -104,7 +105,7 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
         /// <returns>A task representing the asynchronous operation with count of revoked tokens</returns>
         public async Task<int> RevokeAllUserTokensAsync(int userId, string revokedReason)
         {
-            var tokens = await _context.EMJWTs
+            var tokens = await _context.EMJWT
                 .Where(t => t.UserId == userId && !t.IsRevoked && t.ExpiresAt > DateTime.UtcNow)
                 .ToListAsync();
 
@@ -133,7 +134,7 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
         /// <exception cref="KeyNotFoundException">Thrown when no token exists with the specified Id</exception>
         public async Task<EMJWT> RefreshTokenAsync(int tokenId, string newRefreshToken, DateTime newRefreshTokenExpiration)
         {
-            var token = await _context.EMJWTs
+            var token = await _context.EMJWT
                 .FirstOrDefaultAsync(t => t.Id == tokenId);
             if (token == null)
                 throw new KeyNotFoundException($"Token with ID {tokenId} not found");
@@ -161,11 +162,11 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
         /// <returns>A task representing the asynchronous operation with count of deleted tokens</returns>
         public async Task<int> CleanupExpiredTokensAsync(DateTime expirationThreshold)
         {
-            var expiredTokens = await _context.EMJWTs
+            var expiredTokens = await _context.EMJWT
                 .Where(t => t.ExpiresAt < expirationThreshold)
                 .ToListAsync();
 
-            _context.EMJWTs.RemoveRange(expiredTokens);
+            _context.EMJWT.RemoveRange(expiredTokens);
             var result = await _context.SaveChangesAsync();
 
             _logger.LogInformation($"Cleaned up {result} expired tokens older than {expirationThreshold}");
@@ -181,7 +182,7 @@ namespace oamswlatifose.Server.Repository.TokenManagement.Implementations
         /// <returns>A task representing the asynchronous operation with count of revoked tokens</returns>
         public async Task<int> RevokeTokensByIPAddressAsync(string ipAddress, string revokedReason)
         {
-            var tokens = await _context.EMJWTs
+            var tokens = await _context.EMJWT
                 .Where(t => t.IPAddress == ipAddress && !t.IsRevoked && t.ExpiresAt > DateTime.UtcNow)
                 .ToListAsync();
 

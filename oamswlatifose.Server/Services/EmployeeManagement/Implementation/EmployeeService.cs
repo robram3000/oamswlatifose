@@ -1,8 +1,12 @@
 ﻿using AutoMapper;
+using FluentValidation;
 using oamswlatifose.Server.DTO.Employee;
+using oamswlatifose.Server.Middleware;
+using oamswlatifose.Server.Model.user;
 using oamswlatifose.Server.Repository.EmployeeManagement.Interface;
 using oamswlatifose.Server.Services.EmployeeManagement.Interfaces;
 using System.Text;
+using System.Text.Json;
 
 namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
 {
@@ -55,7 +59,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                         PageSize = pageSize
                     };
 
-                    return ServiceResponse<PagedResult<EmployeeSummaryDTO>>.Success(
+                    return ServiceResponse<PagedResult<EmployeeSummaryDTO>>.SuccessResult(
                         result,
                         $"Retrieved {employeeDtos.Count()} of {totalCount} employees");
                 }
@@ -77,10 +81,10 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employee = await _queryRepository.GetEmployeeByIdAsync(id);
 
                     if (employee == null)
-                        return ServiceResponse<EmployeeResponseDTO>.Failure($"Employee with ID {id} not found");
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult($"Employee with ID {id} not found");
 
                     var employeeDto = _mapper.Map<EmployeeResponseDTO>(employee);
-                    return ServiceResponse<EmployeeResponseDTO>.Success(employeeDto);
+                    return ServiceResponse<EmployeeResponseDTO>.SuccessResult(employeeDto);
                 }
                 catch (Exception ex)
                 {
@@ -100,10 +104,10 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employee = await _queryRepository.GetEmployeeByEmployeeIdAsync(employeeId);
 
                     if (employee == null)
-                        return ServiceResponse<EmployeeResponseDTO>.Failure($"Employee with EmployeeID {employeeId} not found");
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult($"Employee with EmployeeID {employeeId} not found");
 
                     var employeeDto = _mapper.Map<EmployeeResponseDTO>(employee);
-                    return ServiceResponse<EmployeeResponseDTO>.Success(employeeDto);
+                    return ServiceResponse<EmployeeResponseDTO>.SuccessResult(employeeDto);
                 }
                 catch (Exception ex)
                 {
@@ -124,7 +128,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var validationResult = await _createValidator.ValidateAsync(createDto);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<EmployeeResponseDTO>.Failure(
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -133,7 +137,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var existingEmail = await _queryRepository.GetEmployeeByEmailAsync(createDto.Email);
                     if (existingEmail != null)
                     {
-                        return ServiceResponse<EmployeeResponseDTO>.Failure(
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult(
                             $"Employee with email {createDto.Email} already exists");
                     }
 
@@ -146,7 +150,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     _logger.LogInformation("Employee created successfully: {EmployeeId}, ID: {Id}",
                         created.EmployeeID, created.Id);
 
-                    return ServiceResponse<EmployeeResponseDTO>.Success(
+                    return ServiceResponse<EmployeeResponseDTO>.SuccessResult(
                         employeeDto,
                         "Employee created successfully");
                 }
@@ -169,7 +173,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var validationResult = await _updateValidator.ValidateAsync(updateDto);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<EmployeeResponseDTO>.Failure(
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -178,7 +182,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var existingEmployee = await _queryRepository.GetEmployeeByIdAsync(id);
                     if (existingEmployee == null)
                     {
-                        return ServiceResponse<EmployeeResponseDTO>.Failure($"Employee with ID {id} not found");
+                        return ServiceResponse<EmployeeResponseDTO>.FailureResult($"Employee with ID {id} not found");
                     }
 
                     // Check email uniqueness if changed
@@ -188,7 +192,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                         var duplicateEmail = await _queryRepository.GetEmployeeByEmailAsync(updateDto.Email);
                         if (duplicateEmail != null && duplicateEmail.Id != id)
                         {
-                            return ServiceResponse<EmployeeResponseDTO>.Failure(
+                            return ServiceResponse<EmployeeResponseDTO>.FailureResult(
                                 $"Employee with email {updateDto.Email} already exists");
                         }
                     }
@@ -201,7 +205,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
 
                     _logger.LogInformation("Employee updated successfully: ID: {Id}", id);
 
-                    return ServiceResponse<EmployeeResponseDTO>.Success(
+                    return ServiceResponse<EmployeeResponseDTO>.SuccessResult(
                         employeeDto,
                         "Employee updated successfully");
                 }
@@ -223,7 +227,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var exists = await _queryRepository.EmployeeExistsAsync(id);
                     if (!exists)
                     {
-                        return ServiceResponse<bool>.Failure($"Employee with ID {id} not found");
+                        return ServiceResponse<bool>.FailureResult($"Employee with ID {id} not found");
                     }
 
                     var result = await _commandRepository.DeleteEmployeeAsync(id);
@@ -231,10 +235,10 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     if (result)
                     {
                         _logger.LogInformation("Employee deleted successfully: ID: {Id}", id);
-                        return ServiceResponse<bool>.Success(true, "Employee deleted successfully");
+                        return ServiceResponse<bool>.SuccessResult(true, "Employee deleted successfully");
                     }
 
-                    return ServiceResponse<bool>.Failure("Failed to delete employee");
+                    return ServiceResponse<bool>.FailureResult("Failed to delete employee");
                 }
                 catch (Exception ex)
                 {
@@ -254,7 +258,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employees = await _queryRepository.SearchEmployeesAsync(searchTerm);
                     var employeeDtos = _mapper.Map<IEnumerable<EmployeeSummaryDTO>>(employees);
 
-                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.Success(
+                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.SuccessResult(
                         employeeDtos,
                         $"Found {employeeDtos.Count()} employees matching '{searchTerm}'");
                 }
@@ -276,7 +280,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employees = await _queryRepository.GetEmployeesByDepartmentAsync(department);
                     var employeeDtos = _mapper.Map<IEnumerable<EmployeeSummaryDTO>>(employees);
 
-                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.Success(
+                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.SuccessResult(
                         employeeDtos,
                         $"Found {employeeDtos.Count()} employees in department '{department}'");
                 }
@@ -298,7 +302,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employees = await _queryRepository.GetEmployeesByPositionAsync(position);
                     var employeeDtos = _mapper.Map<IEnumerable<EmployeeSummaryDTO>>(employees);
 
-                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.Success(
+                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.SuccessResult(
                         employeeDtos,
                         $"Found {employeeDtos.Count()} employees with position '{position}'");
                 }
@@ -321,7 +325,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                     var employeesWithoutAccounts = allEmployees.Where(e => e.UserAccount == null);
                     var employeeDtos = _mapper.Map<IEnumerable<EmployeeSummaryDTO>>(employeesWithoutAccounts);
 
-                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.Success(
+                    return ServiceResponse<IEnumerable<EmployeeSummaryDTO>>.SuccessResult(
                         employeeDtos,
                         $"Found {employeeDtos.Count()} employees without user accounts");
                 }
@@ -358,7 +362,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                             .ToList()
                     };
 
-                    return ServiceResponse<DepartmentStatisticsDTO>.Success(stats);
+                    return ServiceResponse<DepartmentStatisticsDTO>.SuccessResult(stats);
                 }
                 catch (Exception ex)
                 {
@@ -398,7 +402,7 @@ namespace oamswlatifose.Server.Services.EmployeeManagement.Implementation
                             break;
                     }
 
-                    return ServiceResponse<byte[]>.Success(exportData, $"Export generated successfully in {format} format");
+                    return ServiceResponse<byte[]>.SuccessResult(exportData, $"Export generated successfully in {format} format");
                 }
                 catch (Exception ex)
                 {

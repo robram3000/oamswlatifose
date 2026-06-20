@@ -1,12 +1,15 @@
 ﻿using AutoMapper;
-using Microsoft.AspNetCore.Authentication;
+using FluentValidation;
+using oamswlatifose.Server.DTO.Auth;
 using oamswlatifose.Server.DTO.User;
 using oamswlatifose.Server.Middleware;
+using oamswlatifose.Server.Model.security;
 using oamswlatifose.Server.Repository.AuditManagement.Interfaces;
 using oamswlatifose.Server.Repository.RoleManagement.Interfaces;
 using oamswlatifose.Server.Repository.SessionManagement.Interfaces;
 using oamswlatifose.Server.Repository.TokenManagement.Interfaces;
 using oamswlatifose.Server.Repository.UserManagement.Interfaces;
+using oamswlatifose.Server.Services.Authentication.Interfaces;
 using oamswlatifose.Server.Utilities.Security;
 
 namespace oamswlatifose.Server.Services.Authentication.Implementation
@@ -22,6 +25,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
         private readonly IJwtTokenManagementCommandRepository _tokenCommandRepository;
         private readonly IJwtTokenManagementQueryRepository _tokenQueryRepository;
         private readonly ISessionManagementCommandRepository _sessionCommandRepository;
+        private readonly ISessionManagementQueryRepository _sessionQueryRepository;
         private readonly IAuthenticationAuditCommandRepository _auditCommandRepository;
         private readonly IRoleBasedAccessQueryRepository _roleQueryRepository;
         private readonly JwtTokenGenerator _tokenGenerator;
@@ -38,6 +42,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
             IJwtTokenManagementCommandRepository tokenCommandRepository,
             IJwtTokenManagementQueryRepository tokenQueryRepository,
             ISessionManagementCommandRepository sessionCommandRepository,
+            ISessionManagementQueryRepository sessionQueryRepository,
             IAuthenticationAuditCommandRepository auditCommandRepository,
             IRoleBasedAccessQueryRepository roleQueryRepository,
             JwtTokenGenerator tokenGenerator,
@@ -52,20 +57,21 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
             ICorrelationIdGenerator correlationIdGenerator)
             : base(logger, httpContextAccessor, correlationIdGenerator)
         {
-            _userQueryRepository = userQueryRepository;
-            _userCommandRepository = userCommandRepository;
-            _tokenCommandRepository = tokenCommandRepository;
-            _tokenQueryRepository = tokenQueryRepository;
-            _sessionCommandRepository = sessionCommandRepository;
-            _auditCommandRepository = auditCommandRepository;
-            _roleQueryRepository = roleQueryRepository;
-            _tokenGenerator = tokenGenerator;
-            _mapper = mapper;
-            _loginValidator = loginValidator;
-            _registerValidator = registerValidator;
-            _changePasswordValidator = changePasswordValidator;
-            _forgotPasswordValidator = forgotPasswordValidator;
-            _resetPasswordValidator = resetPasswordValidator;
+            _userQueryRepository = userQueryRepository ?? throw new ArgumentNullException(nameof(userQueryRepository));
+            _userCommandRepository = userCommandRepository ?? throw new ArgumentNullException(nameof(userCommandRepository));
+            _tokenCommandRepository = tokenCommandRepository ?? throw new ArgumentNullException(nameof(tokenCommandRepository));
+            _tokenQueryRepository = tokenQueryRepository ?? throw new ArgumentNullException(nameof(tokenQueryRepository));
+            _sessionCommandRepository = sessionCommandRepository ?? throw new ArgumentNullException(nameof(sessionCommandRepository));
+            _sessionQueryRepository = sessionQueryRepository ?? throw new ArgumentNullException(nameof(sessionQueryRepository));
+            _auditCommandRepository = auditCommandRepository ?? throw new ArgumentNullException(nameof(auditCommandRepository));
+            _roleQueryRepository = roleQueryRepository ?? throw new ArgumentNullException(nameof(roleQueryRepository));
+            _tokenGenerator = tokenGenerator ?? throw new ArgumentNullException(nameof(tokenGenerator));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _loginValidator = loginValidator ?? throw new ArgumentNullException(nameof(loginValidator));
+            _registerValidator = registerValidator ?? throw new ArgumentNullException(nameof(registerValidator));
+            _changePasswordValidator = changePasswordValidator ?? throw new ArgumentNullException(nameof(changePasswordValidator));
+            _forgotPasswordValidator = forgotPasswordValidator ?? throw new ArgumentNullException(nameof(forgotPasswordValidator));
+            _resetPasswordValidator = resetPasswordValidator ?? throw new ArgumentNullException(nameof(resetPasswordValidator));
         }
 
         public async Task<ServiceResponse<LoginResponseDTO>> LoginAsync(
@@ -88,7 +94,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<LoginResponseDTO>.Failure(
+                        return ServiceResponse<LoginResponseDTO>.FailureResult(
                             "Invalid login credentials",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -107,7 +113,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<LoginResponseDTO>.Failure("Invalid username or password");
+                        return ServiceResponse<LoginResponseDTO>.FailureResult("Invalid username or password");
                     }
 
                     if (!user.IsActive)
@@ -119,7 +125,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<LoginResponseDTO>.Failure("Your account has been deactivated");
+                        return ServiceResponse<LoginResponseDTO>.FailureResult("Your account has been deactivated");
                     }
 
                     // Get user role for permissions
@@ -133,7 +139,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<LoginResponseDTO>.Failure("Account configuration error");
+                        return ServiceResponse<LoginResponseDTO>.FailureResult("Account configuration error");
                     }
 
                     // Generate tokens
@@ -197,7 +203,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     _logger.LogInformation("User {Username} logged in successfully from {IpAddress}",
                         user.Username, ipAddress);
 
-                    return ServiceResponse<LoginResponseDTO>.Success(response, "Login successful");
+                    return ServiceResponse<LoginResponseDTO>.SuccessResult(response, "Login successful");
                 }
                 catch (Exception ex)
                 {
@@ -228,7 +234,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     var validationResult = await _registerValidator.ValidateAsync(registerRequest);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<UserResponseDTO>.Failure(
+                        return ServiceResponse<UserResponseDTO>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -244,7 +250,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<UserResponseDTO>.Failure("Email already registered");
+                        return ServiceResponse<UserResponseDTO>.FailureResult("Email already registered");
                     }
 
                     // Create user
@@ -270,7 +276,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     _logger.LogInformation("User {Username} registered successfully", createdUser.Username);
 
-                    return ServiceResponse<UserResponseDTO>.Success(
+                    return ServiceResponse<UserResponseDTO>.SuccessResult(
                         userDto,
                         "Registration successful. Please verify your email.");
                 }
@@ -303,7 +309,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<RefreshTokenResponseDTO>.Failure("Invalid refresh token");
+                        return ServiceResponse<RefreshTokenResponseDTO>.FailureResult("Invalid refresh token");
                     }
 
                     // Get user and role
@@ -317,13 +323,13 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             userAgent);
 
-                        return ServiceResponse<RefreshTokenResponseDTO>.Failure("User account not available");
+                        return ServiceResponse<RefreshTokenResponseDTO>.FailureResult("User account not available");
                     }
 
                     var role = await _roleQueryRepository.GetRoleByIdAsync(user.RoleId);
                     if (role == null || !role.IsActive)
                     {
-                        return ServiceResponse<RefreshTokenResponseDTO>.Failure("Invalid role configuration");
+                        return ServiceResponse<RefreshTokenResponseDTO>.FailureResult("Invalid role configuration");
                     }
 
                     // Generate new tokens
@@ -348,8 +354,8 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     await _tokenCommandRepository.CreateTokenAsync(newToken);
 
-                    // Update session
-                    var activeSessions = await _sessionCommandRepository.GetActiveSessionsByUserIdAsync(user.Id);
+                    // Fix: Use the query repository to get active sessions
+                    var activeSessions = await _sessionQueryRepository.GetActiveSessionsByUserIdAsync(user.Id);
                     var session = activeSessions.FirstOrDefault();
                     if (session != null)
                     {
@@ -365,7 +371,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     _logger.LogInformation("Token refreshed for user {Username}", user.Username);
 
-                    return ServiceResponse<RefreshTokenResponseDTO>.Success(response, "Token refreshed successfully");
+                    return ServiceResponse<RefreshTokenResponseDTO>.SuccessResult(response, "Token refreshed successfully");
                 }
                 catch (Exception ex)
                 {
@@ -395,7 +401,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     _logger.LogInformation("User {Username} logged out successfully", user?.Username ?? userId.ToString());
 
-                    return ServiceResponse<bool>.Success(true, "Logout successful");
+                    return ServiceResponse<bool>.SuccessResult(true, "Logout successful");
                 }
                 catch (Exception ex)
                 {
@@ -418,7 +424,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     var validationResult = await _changePasswordValidator.ValidateAsync(changePasswordDto);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<bool>.Failure(
+                        return ServiceResponse<bool>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -438,7 +444,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                             ipAddress,
                             _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString());
 
-                        return ServiceResponse<bool>.Failure("Current password is incorrect");
+                        return ServiceResponse<bool>.FailureResult("Current password is incorrect");
                     }
 
                     // Revoke all user tokens (force re-login)
@@ -460,7 +466,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     _logger.LogInformation("Password changed for user {UserId}", userId);
 
-                    return ServiceResponse<bool>.Success(true, "Password changed successfully");
+                    return ServiceResponse<bool>.SuccessResult(true, "Password changed successfully");
                 }
                 catch (Exception ex)
                 {
@@ -482,7 +488,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     var validationResult = await _forgotPasswordValidator.ValidateAsync(forgotPasswordDto);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<string>.Failure(
+                        return ServiceResponse<string>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -497,7 +503,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     }
 
                     // Always return success to prevent email enumeration
-                    return ServiceResponse<string>.Success(
+                    return ServiceResponse<string>.SuccessResult(
                         resetToken ?? "Token generated",
                         "If your email is registered, you will receive password reset instructions");
                 }
@@ -521,7 +527,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     var validationResult = await _resetPasswordValidator.ValidateAsync(resetPasswordDto);
                     if (!validationResult.IsValid)
                     {
-                        return ServiceResponse<bool>.Failure(
+                        return ServiceResponse<bool>.FailureResult(
                             "Validation failed",
                             validationResult.Errors.Select(e => e.ErrorMessage));
                     }
@@ -534,7 +540,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     if (!result)
                     {
-                        return ServiceResponse<bool>.Failure("Invalid or expired reset token");
+                        return ServiceResponse<bool>.FailureResult("Invalid or expired reset token");
                     }
 
                     var user = await _userQueryRepository.GetUserByEmailAsync(resetPasswordDto.Email);
@@ -559,7 +565,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     _logger.LogInformation("Password reset successful for {Email}", resetPasswordDto.Email);
 
-                    return ServiceResponse<bool>.Success(true, "Password reset successful");
+                    return ServiceResponse<bool>.SuccessResult(true, "Password reset successful");
                 }
                 catch (Exception ex)
                 {
@@ -578,7 +584,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     var user = await _userQueryRepository.GetUserByIdAsync(userId);
                     if (user == null)
                     {
-                        return ServiceResponse<bool>.Failure("User not found");
+                        return ServiceResponse<bool>.FailureResult("User not found");
                     }
 
                     // TODO: Implement email verification token validation
@@ -587,10 +593,10 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                     if (result)
                     {
                         _logger.LogInformation("Email verified for user {Username}", user.Username);
-                        return ServiceResponse<bool>.Success(true, "Email verified successfully");
+                        return ServiceResponse<bool>.SuccessResult(true, "Email verified successfully");
                     }
 
-                    return ServiceResponse<bool>.Failure("Email verification failed");
+                    return ServiceResponse<bool>.FailureResult("Email verification failed");
                 }
                 catch (Exception ex)
                 {
@@ -610,7 +616,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     if (user == null)
                     {
-                        return ServiceResponse<UserResponseDTO>.Failure("User not found");
+                        return ServiceResponse<UserResponseDTO>.FailureResult("User not found");
                     }
 
                     var userDto = _mapper.Map<UserResponseDTO>(user);
@@ -620,7 +626,7 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
                         userDto.RolePermissions = _mapper.Map<Dictionary<string, bool>>(user.Role);
                     }
 
-                    return ServiceResponse<UserResponseDTO>.Success(userDto, "User retrieved successfully");
+                    return ServiceResponse<UserResponseDTO>.SuccessResult(userDto, "User retrieved successfully");
                 }
                 catch (Exception ex)
                 {

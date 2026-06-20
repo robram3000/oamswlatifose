@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.security;
+using oamswlatifose.Server.Repository.RoleManagement.Interfaces;
 
 namespace oamswlatifose.Server.Repository.RoleManagement.Implementations
 {

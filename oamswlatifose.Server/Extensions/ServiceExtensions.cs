@@ -1,6 +1,14 @@
-﻿using Microsoft.AspNetCore.Authentication;
+﻿using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using oamswlatifose.Server.DTO.attendances;
+using oamswlatifose.Server.DTO.Employee;
+using oamswlatifose.Server.DTO.Role;
+using oamswlatifose.Server.DTO.User;
 using oamswlatifose.Server.MappingProfiles;
 using oamswlatifose.Server.Middleware;
 using oamswlatifose.Server.Model;
@@ -20,8 +28,19 @@ using oamswlatifose.Server.Repository.TokenManagement.Implementations;
 using oamswlatifose.Server.Repository.TokenManagement.Interfaces;
 using oamswlatifose.Server.Repository.UserManagement.Implementations;
 using oamswlatifose.Server.Repository.UserManagement.Interfaces;
+using oamswlatifose.Server.Auth;
+using oamswlatifose.Server.Services.Attendance.Implementation;
+using oamswlatifose.Server.Services.Attendance.Interfaces;
+using oamswlatifose.Server.Services.Branch.Implementation;
+using oamswlatifose.Server.Services.Branch.Interfaces;
+using oamswlatifose.Server.Services.Email.Implementation;
+using oamswlatifose.Server.Services.Email.Interfaces;
 using oamswlatifose.Server.Services.EmployeeManagement.Implementation;
 using oamswlatifose.Server.Services.EmployeeManagement.Interfaces;
+using oamswlatifose.Server.Services.Schedule.Implementation;
+using oamswlatifose.Server.Services.Schedule.Interfaces;
+using oamswlatifose.Server.Services.UserProvisioning.Implementation;
+using oamswlatifose.Server.Services.UserProvisioning.Interfaces;
 using oamswlatifose.Server.Utilities.Security;
 using oamswlatifose.Server.Validations.Validators;
 using System.Reflection;
@@ -63,9 +82,12 @@ namespace oamswlatifose.Server.Extensions
         /// </summary>
         public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
-            var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
+            var jwtSettings = configuration.GetSection("JwtConfig").Get<JwtSettings>();
 
             services.AddSingleton(jwtSettings);
+            // JwtTokenGenerator depends on IOptions<JwtSettings>; bind it so the generator
+            // gets the real secret + expirations (otherwise IOptions resolves to defaults).
+            services.Configure<JwtSettings>(configuration.GetSection("JwtConfig"));
             services.AddSingleton<JwtTokenGenerator>();
 
             var key = Encoding.ASCII.GetBytes(jwtSettings.Secret);
@@ -142,6 +164,7 @@ namespace oamswlatifose.Server.Extensions
                 cfg.AddProfile<UserMappingProfile>();
                 cfg.AddProfile<AttendanceMappingProfile>();
                 cfg.AddProfile<RoleMappingProfile>();
+           
             }, typeof(Program).Assembly);
 
             return services;
@@ -155,45 +178,121 @@ namespace oamswlatifose.Server.Extensions
             // Employee repositories
             services.AddScoped<IEmployeeManagementQueryRepository, EmployeeManagementQueryRepository>();
             services.AddScoped<IEmployeeManagementCommandRepository, EmployeeManagementCommandRepository>();
-
             // Attendance repositories
             services.AddScoped<IAttendanceTrackingQueryRepository, AttendanceTrackingQueryRepository>();
             services.AddScoped<IAttendanceTrackingCommandRepository, AttendanceTrackingCommandRepository>();
-
             // User repositories
             services.AddScoped<IUserAccountQueryRepository, UserAccountQueryRepository>();
             services.AddScoped<IUserAccountCommandRepository, UserAccountCommandRepository>();
-
             // Role repositories
             services.AddScoped<IRoleBasedAccessQueryRepository, RoleBasedAccessQueryRepository>();
             services.AddScoped<IRoleBasedAccessCommandRepository, RoleBasedAccessCommandRepository>();
-
             // Token repositories
             services.AddScoped<IJwtTokenManagementQueryRepository, JwtTokenManagementQueryRepository>();
             services.AddScoped<IJwtTokenManagementCommandRepository, JwtTokenManagementCommandRepository>();
-
             // Session repositories
             services.AddScoped<ISessionManagementQueryRepository, SessionManagementQueryRepository>();
             services.AddScoped<ISessionManagementCommandRepository, SessionManagementCommandRepository>();
-
             // Audit repositories
             services.AddScoped<IAuthenticationAuditQueryRepository, AuthenticationAuditQueryRepository>();
             services.AddScoped<IAuthenticationAuditCommandRepository, AuthenticationAuditCommandRepository>();
-
             // Email log repositories
             services.AddScoped<IEmailNotificationLogQueryRepository, EmailNotificationLogQueryRepository>();
             services.AddScoped<IEmailNotificationLogCommandRepository, EmailNotificationLogCommandRepository>();
 
+
+
+            return services;
+        }
+        /// <summary>
+        ///    Register all Services.
+        /// </summary>
+        /// <param name="services"></param>
+        /// <returns></returns>
+        public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+        {
+            services.AddScoped<IEmployeeService, EmployeeService>();
+            // Fully-qualified: a bare `IAuthenticationService`/`AuthenticationService` would bind to
+            // Microsoft.AspNetCore.Authentication's types (that namespace is imported for JWT setup),
+            // registering the framework service instead of ours and leaving AuthController unresolvable.
+            services.AddScoped<oamswlatifose.Server.Services.Authentication.Interfaces.IAuthenticationService,
+                               oamswlatifose.Server.Services.Authentication.Implementation.AuthenticationService>();
+            services.AddScoped<IAttendanceService, AttendanceService>();
+            services.AddScoped<IEmailService, EmailService>();
+
+            // Schedule + branch geofence + OTP-verified clock-in
+            services.AddSingleton<IOTPGenerator, OTPGenerator>();
+            services.AddScoped<IWorkScheduleService, WorkScheduleService>();
+            services.AddScoped<IBranchService, BranchService>();
+            services.AddScoped<IAttendanceVerificationService, AttendanceVerificationService>();
+            services.AddScoped<IUserProvisioningService, UserProvisioningService>();
+
             return services;
         }
 
+        /// <summary>
+        /// Binds the EmailService SMTP/sender options from configuration. EmailService depends on
+        /// IOptions&lt;EmailService.EmailSettings&gt;, whose property names differ from the
+        /// "SmtpSettings"/"EmailSettings:Sender" config sections — so we map them explicitly here
+        /// (without this, email sending silently has no SMTP host and fails).
+        /// </summary>
+        public static IServiceCollection AddEmailOptions(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.Configure<EmailService.EmailSettings>(opts =>
+            {
+                var smtp = configuration.GetSection("SmtpSettings");
+                opts.SmtpServer = smtp["Host"];
+                opts.SmtpPort = int.TryParse(smtp["Port"], out var port) ? port : 587;
+                opts.EnableSsl = !bool.TryParse(smtp["EnableSsl"], out var ssl) || ssl;
+                opts.SmtpUsername = smtp["UserName"];
+                opts.SmtpPassword = smtp["Password"];
+
+                opts.FromEmail = configuration["EmailSettings:Sender:EmailAddress"] ?? smtp["UserName"];
+                opts.FromName = configuration["EmailSettings:Sender:DisplayName"] ?? "Attendance";
+
+                // No tracking pixel host is configured, so keep tracking off (avoids broken pixels).
+                opts.EnableTracking = false;
+                // Templated emails are unused by the attendance flow; keep a non-null map so the
+                // legacy templated methods fail gracefully instead of NRE-ing.
+                opts.Templates = new Dictionary<string, EmailService.EmailTemplate>();
+            });
+
+            return services;
+        }
+        /// <summary>
+        /// Registers all validators.
+        /// </summary>
+        public static IServiceCollection AddValidators(this IServiceCollection services)
+        {
+            // Register ALL validators explicitly
+            services.AddScoped<IValidator<CreateAttendanceDTO>, CreateAttendanceValidator>();
+            services.AddScoped<IValidator<UpdateAttendanceDTO>, UpdateAttendanceValidator>(); 
+            services.AddScoped<IValidator<ClockInDTO>, ClockInValidator>();
+            services.AddScoped<IValidator<ClockOutDTO>, ClockOutValidator>();
+            services.AddScoped<IValidator<AttendanceReportDTO>, AttendanceReportValidator>();
+            services.AddScoped<IValidator<CreateEmployeeDTO>, CreateEmployeeValidator>();
+            services.AddScoped<IValidator<UpdateEmployeeDTO>, UpdateEmployeeValidator>();
+            services.AddScoped<IValidator<CreateRoleDTO>, CreateRoleValidator>();
+            services.AddScoped<IValidator<UpdateRoleDTO>, UpdateRoleValidator>();
+            services.AddScoped<IValidator<AssignRoleDTO>, AssignRoleValidator>();
+            services.AddScoped<IValidator<CreateUserDTO>, CreateUserValidator>();
+            services.AddScoped<IValidator<ChangePasswordDTO>, ChangePasswordValidator>();
+            services.AddScoped<IValidator<ForgotPasswordDTO>, ForgotPasswordValidator>();
+            services.AddScoped<IValidator<ResetPasswordDTO>, ResetPasswordValidator>();
+
+            return services;
+        }
         /// <summary>
         /// Registers all services.
         /// </summary>
         public static IServiceCollection AddServices(this IServiceCollection services)
         {
             services.AddScoped<IEmployeeService, EmployeeService>();
-            services.AddScoped<IAuthenticationService, AuthenticationService>();
+            // Fully-qualified: a bare `IAuthenticationService`/`AuthenticationService` would bind to
+            // Microsoft.AspNetCore.Authentication's types (that namespace is imported for JWT setup),
+            // registering the framework service instead of ours and leaving AuthController unresolvable.
+            services.AddScoped<oamswlatifose.Server.Services.Authentication.Interfaces.IAuthenticationService,
+                               oamswlatifose.Server.Services.Authentication.Implementation.AuthenticationService>();
 
             // Add correlation ID generator
             services.AddSingleton<ICorrelationIdGenerator, CorrelationIdGenerator>();
@@ -201,16 +300,7 @@ namespace oamswlatifose.Server.Extensions
             return services;
         }
 
-        /// <summary>
-        /// Registers all validators.
-        /// </summary>
-        public static IServiceCollection AddValidators(this IServiceCollection services)
-        {
-            services.AddValidatorsFromAssemblyContaining<CreateEmployeeValidator>();
-
-            return services;
-        }
-
+      
         /// <summary>
         /// Configures Swagger/OpenAPI.
         /// </summary>
@@ -275,8 +365,7 @@ namespace oamswlatifose.Server.Extensions
                 .AddUrlGroup(new Uri(configuration["ExternalServices:EmailService"] ?? "http://localhost:5000"),
                     "Email Service")
                 .AddProcessAllocatedMemoryHealthCheck(maximumMegabytesAllocated: 500)
-                .AddDiskStorageHealthCheck(configure =>
-                    configure.AddDrive("C:\\", minimumFreeMegabytes: 10240));
+                .AddDiskStorageHealthCheck(setup => setup.AddDrive("C:\\", minimumFreeMegabytes: 10240));
 
             return services;
         }
@@ -284,7 +373,7 @@ namespace oamswlatifose.Server.Extensions
         /// <summary>
         /// Configures response caching.
         /// </summary>
-        public static IServiceCollection AddResponseCaching(this IServiceCollection services)
+        public static IServiceCollection AddCustomResponseCaching(this IServiceCollection services)
         {
             services.AddResponseCaching(options =>
             {

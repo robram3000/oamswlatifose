@@ -9,7 +9,16 @@
     <BuildOutputFolder>$(MSBuildProjectDirectory)\dist</BuildOutputFolder>
   </PropertyGroup>
   <ItemGroup>
-    <Folder Include="api\" />
+    <Folder Include="src\components\auth\" />
+    <Folder Include="src\components\nav\" />
+    <Folder Include="src\portal\admin\component\layout\" />
+    <Folder Include="src\portal\admin\hook\" />
+    <Folder Include="src\portal\admin\store\" />
+    <Folder Include="src\portal\hr\hook\" />
+    <Folder Include="src\portal\hr\store\" />
+    <Folder Include="src\portal\user\component\layout\" />
+    <Folder Include="src\portal\user\hook\" />
+    <Folder Include="src\portal\user\store\" />
     <Folder Include="utilities\" />
   </ItemGroup>
 </Project>

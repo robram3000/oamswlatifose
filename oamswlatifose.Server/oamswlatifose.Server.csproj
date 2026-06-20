@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -11,24 +11,44 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="DTO\smtp\**" />
+    <Content Remove="DTO\smtp\**" />
+    <EmbeddedResource Remove="DTO\smtp\**" />
+    <None Remove="DTO\smtp\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AspNetCore.HealthChecks.System" Version="8.0.0" />
+    <PackageReference Include="AspNetCore.HealthChecks.Uris" Version="8.0.0" />
     <PackageReference Include="AutoMapper" Version="16.0.0" />
+    <PackageReference Include="FluentValidation" Version="12.1.1" />
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
+    <PackageReference Include="MailKit" Version="4.15.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SpaProxy">
       <Version>8.*-*</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- Only load the JS project inside Visual Studio; CI/Railway skip it -->
+  <ItemGroup Condition="'$(BuildingInsideVisualStudio)' == 'true'">
     <ProjectReference Include="..\oamswlatifose.client\oamswlatifose.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-    <Folder Include="DTO\smtp\" />
-    <Folder Include="Services\Security\" />
+    <Folder Include="Utilities\Ip-geolocation\" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,7 @@
-﻿using oamswlatifose.Server.Model;
+﻿using Microsoft.EntityFrameworkCore;
+using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.security;
+using oamswlatifose.Server.Repository.AuditManagement.Interfaces;
 
 namespace oamswlatifose.Server.Repository.AuditManagement.Implementations
 {

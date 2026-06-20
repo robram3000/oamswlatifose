@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.occurance;
+using oamswlatifose.Server.Repository.AttendanceManagement.Interfaces;
 
 namespace oamswlatifose.Server.Repository.AttendanceManagement.Implementation
 {
@@ -34,7 +35,7 @@ namespace oamswlatifose.Server.Repository.AttendanceManagement.Implementation
         /// <param name="logger">The logging service for capturing attendance operation details and error information</param>
         public AttendanceTrackingCommandRepository(
             ApplicationDbContext context,
-            ILogger<AttendanceTrackingCommandRepository> _logger)
+            ILogger<AttendanceTrackingCommandRepository> logger)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));

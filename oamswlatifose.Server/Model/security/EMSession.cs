@@ -24,7 +24,7 @@ namespace oamswlatifose.Server.Model.security
         public string IPAddress { get; set; }
 
         [MaxLength(500)]
-        public string UserAgent { get; set; }
+        public string? UserAgent { get; set; }
 
         [Required]
         public DateTime LoginTime { get; set; }
@@ -40,10 +40,10 @@ namespace oamswlatifose.Server.Model.security
         public bool IsActive { get; set; }
 
         [MaxLength(50)]
-        public string DeviceType { get; set; }
+        public string? DeviceType { get; set; }
 
         [MaxLength(255)]
-        public string Location { get; set; }
+        public string? Location { get; set; }
 
         public virtual EMAuthorizeruser User { get; set; }
     }

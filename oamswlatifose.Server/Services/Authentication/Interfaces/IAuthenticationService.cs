@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using Microsoft.AspNetCore.Authentication;
+using oamswlatifose.Server.DTO.Auth;
 using oamswlatifose.Server.DTO.User;
 using oamswlatifose.Server.Repository.AuditManagement.Interfaces;
 using oamswlatifose.Server.Repository.RoleManagement.Interfaces;

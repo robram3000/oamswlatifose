@@ -15,8 +15,8 @@
     /// <para>- Execution time tracking for performance monitoring</para>
     /// 
     /// <para>Usage Pattern:</para>
-    /// <para>var response = ServiceResponse&lt;Employee&gt;.Success(employee, "Employee retrieved successfully");</para>
-    /// <para>var response = ServiceResponse&lt;Employee&gt;.Failure("Employee not found", new[] { "Invalid ID" });</para>
+    /// <para>var response = ServiceResponse&lt;Employee&gt;.SuccessResult(employee, "Employee retrieved successfully");</para>
+    /// <para>var response = ServiceResponse&lt;Employee&gt;.FailureResult("Employee not found", new[] { "Invalid ID" });</para>
     /// </summary>
     /// <typeparam name="T">The type of data payload being returned by the service operation</typeparam>
     public class ServiceResponse<T>
@@ -25,7 +25,7 @@
         /// Indicates whether the service operation completed successfully.
         /// True for successful operations, false for failures or validation errors.
         /// </summary>
-        public bool Success { get; set; }
+        public bool IsSuccess { get; set; }
 
         /// <summary>
         /// Human-readable message describing the result of the operation.
@@ -35,7 +35,7 @@
 
         /// <summary>
         /// The strongly-typed data payload returned by the service operation.
-        /// Null when Success is false or operation returns no data.
+        /// Null when IsSuccess is false or operation returns no data.
         /// </summary>
         public T Data { get; set; }
 
@@ -69,11 +69,11 @@
         /// <param name="data">The data payload to return</param>
         /// <param name="message">Optional success message</param>
         /// <returns>A configured success response</returns>
-        public static ServiceResponse<T> Success(T data, string message = null)
+        public static ServiceResponse<T> SuccessResult(T data, string message = null)
         {
             return new ServiceResponse<T>
             {
-                Success = true,
+                IsSuccess = true,
                 Data = data,
                 Message = message ?? "Operation completed successfully",
                 Errors = null,
@@ -87,11 +87,11 @@
         /// <param name="message">Primary error message describing the failure</param>
         /// <param name="errors">Collection of detailed error messages</param>
         /// <returns>A configured failure response</returns>
-        public static ServiceResponse<T> Failure(string message, IEnumerable<string> errors = null)
+        public static ServiceResponse<T> FailureResult(string message, IEnumerable<string> errors = null)
         {
             return new ServiceResponse<T>
             {
-                Success = false,
+                IsSuccess = false,
                 Data = default,
                 Message = message ?? "Operation failed",
                 Errors = errors ?? new[] { message },
@@ -109,7 +109,7 @@
         {
             return new ServiceResponse<T>
             {
-                Success = false,
+                IsSuccess = false,
                 Data = default,
                 Message = message ?? "An error occurred while processing your request",
                 Errors = new[]
@@ -128,29 +128,29 @@
     /// </summary>
     public class ServiceResponse
     {
-        public bool Success { get; set; }
+        public bool IsSuccess { get; set; }
         public string Message { get; set; }
         public IEnumerable<string> Errors { get; set; }
         public string CorrelationId { get; set; }
         public DateTime Timestamp { get; set; }
         public long ExecutionTimeMs { get; set; }
 
-        public static ServiceResponse Success(string message = null)
+        public static ServiceResponse SuccessResult(string message = null)
         {
             return new ServiceResponse
             {
-                Success = true,
+                IsSuccess = true,
                 Message = message ?? "Operation completed successfully",
                 Errors = null,
                 Timestamp = DateTime.UtcNow
             };
         }
 
-        public static ServiceResponse Failure(string message, IEnumerable<string> errors = null)
+        public static ServiceResponse FailureResult(string message, IEnumerable<string> errors = null)
         {
             return new ServiceResponse
             {
-                Success = false,
+                IsSuccess = false,
                 Message = message ?? "Operation failed",
                 Errors = errors ?? new[] { message },
                 Timestamp = DateTime.UtcNow
@@ -161,7 +161,7 @@
         {
             return new ServiceResponse
             {
-                Success = false,
+                IsSuccess = false,
                 Message = message ?? "An error occurred while processing your request",
                 Errors = new[]
                 {

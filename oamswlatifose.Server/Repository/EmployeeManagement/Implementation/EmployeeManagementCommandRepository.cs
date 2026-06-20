@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.user;
+using oamswlatifose.Server.Repository.EmployeeManagement.Interface;
 
 namespace oamswlatifose.Server.Repository.EmployeeManagement.Implementation
 {

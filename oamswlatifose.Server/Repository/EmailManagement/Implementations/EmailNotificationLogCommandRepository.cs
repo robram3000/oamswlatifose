@@ -1,5 +1,7 @@
-﻿using oamswlatifose.Server.Model;
+﻿using Microsoft.EntityFrameworkCore;
+using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Model.smtp;
+using oamswlatifose.Server.Repository.EmailManagement.Interfaces;
 
 namespace oamswlatifose.Server.Repository.EmailManagement.Implementations
 {

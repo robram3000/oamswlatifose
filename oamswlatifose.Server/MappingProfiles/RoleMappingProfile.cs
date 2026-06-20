@@ -19,6 +19,12 @@ namespace oamswlatifose.Server.MappingProfiles
     {
         public RoleMappingProfile()
         {
+            // Role → permission dictionary. AuthenticationService.LoginAsync does
+            // _mapper.Map<Dictionary<string,bool>>(role); without this explicit map AutoMapper
+            // throws "Missing type map configuration" and login fails.
+            CreateMap<EMRoleBasedAccessControl, Dictionary<string, bool>>()
+                .ConvertUsing(src => MapPermissionsToDictionary(src));
+
             // Map Role entity to detailed response DTO with permission summary
             CreateMap<EMRoleBasedAccessControl, RoleResponseDTO>()
                 .ForMember(dest => dest.UserCount,

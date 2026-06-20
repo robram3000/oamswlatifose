@@ -26,6 +26,20 @@ namespace oamswlatifose.Server.Controllers
         }
 
         /// <summary>
+        /// Gets the employee record ID linked to the current user (from the "employee_id" claim).
+        /// </summary>
+        /// <returns>Employee ID if linked; otherwise, 0</returns>
+        protected int GetCurrentEmployeeId()
+        {
+            var employeeIdClaim = User.FindFirst("employee_id");
+
+            if (employeeIdClaim != null && int.TryParse(employeeIdClaim.Value, out var employeeId))
+                return employeeId;
+
+            return 0;
+        }
+
+        /// <summary>
         /// Gets the current authenticated user's username from claims.
         /// </summary>
         /// <returns>Username if authenticated; otherwise, null</returns>

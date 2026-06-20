@@ -10,8 +10,6 @@ namespace oamswlatifose.Server.Model.smtp
         public string Emaillogsid { get; set; } 
 
         public string Email { get; set; }
-
-
         public virtual EMOtpUserRequest OtpUserRequest { get; set; }
 
     }

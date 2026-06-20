@@ -1,4 +1,5 @@
-﻿using oamswlatifose.Server.DTO.Role;
+﻿using FluentValidation;
+using oamswlatifose.Server.DTO.Role;
 
 namespace oamswlatifose.Server.Validations.Validators
 {

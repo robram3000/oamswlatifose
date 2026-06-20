@@ -1,4 +1,5 @@
-﻿using oamswlatifose.Server.DTO.User;
+﻿using FluentValidation;
+using oamswlatifose.Server.DTO.User;
 
 namespace oamswlatifose.Server.Validations.Validators
 {
@@ -104,6 +105,6 @@ namespace oamswlatifose.Server.Validations.Validators
             RuleFor(x => x.ConfirmPassword)
                 .NotEmpty().WithMessage("Confirm password is required")
                 .Equal(x => x.NewPassword).WithMessage("Passwords do not match");
-        }
+           }
     }
 }

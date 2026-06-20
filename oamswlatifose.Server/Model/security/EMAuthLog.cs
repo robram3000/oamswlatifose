@@ -15,7 +15,7 @@ namespace oamswlatifose.Server.Model.security
         public int? UserId { get; set; }
 
         [MaxLength(100)]
-        public string UsernameAttempted { get; set; }
+        public string? UsernameAttempted { get; set; }
 
         [Required]
         [MaxLength(50)]
@@ -25,25 +25,25 @@ namespace oamswlatifose.Server.Model.security
         public DateTime Timestamp { get; set; }
 
         [MaxLength(45)]
-        public string IPAddress { get; set; }
+        public string? IPAddress { get; set; }
 
         [MaxLength(500)]
-        public string UserAgent { get; set; }
+        public string? UserAgent { get; set; }
 
         [MaxLength(1000)]
-        public string Details { get; set; }
+        public string? Details { get; set; }
 
         [Required]
         public bool WasSuccessful { get; set; }
 
         [MaxLength(255)]
-        public string FailureReason { get; set; }
+        public string? FailureReason { get; set; }
 
         [MaxLength(50)]
-        public string DeviceType { get; set; }
+        public string? DeviceType { get; set; }
 
         [MaxLength(255)]
-        public string Location { get; set; }
+        public string? Location { get; set; }
 
         public virtual EMAuthorizeruser User { get; set; }
     }

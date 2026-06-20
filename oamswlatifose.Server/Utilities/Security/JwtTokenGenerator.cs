@@ -2,6 +2,7 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using oamswlatifose.Server.Model.security;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
@@ -59,14 +60,19 @@ namespace oamswlatifose.Server.Utilities.Security
 
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.UniqueName, user.Username),
+                new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email, user.Email),
+                new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("user_id", user.Id.ToString()),
                 new Claim("role_id", user.RoleId.ToString()),
                 new Claim("role_name", role.RoleName)
             };
+
+            // Link to the employee record so attendance/schedule endpoints can resolve the
+            // current employee from the token (AttendanceController reads "employee_id").
+            if (user.EmployeeId.HasValue)
+                claims.Add(new Claim("employee_id", user.EmployeeId.Value.ToString()));
 
             // Add permission claims
             if (role.CanViewEmployees) claims.Add(new Claim("permission", "view_employees"));
@@ -142,7 +148,7 @@ namespace oamswlatifose.Server.Utilities.Security
         /// </summary>
         public int? GetUserIdFromToken(ClaimsPrincipal principal)
         {
-            var userIdClaim = principal?.FindFirst("user_id") ?? principal?.FindFirst(JwtRegisteredClaimNames.Sub);
+            var userIdClaim = principal?.FindFirst("user_id") ?? principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub);
 
             if (userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId))
                 return userId;
