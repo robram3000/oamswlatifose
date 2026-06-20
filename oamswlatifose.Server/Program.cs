@@ -9,7 +9,7 @@ using oamswlatifose.Server.Services.Email;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 
 builder.Services.AddControllers();
@@ -49,7 +49,8 @@ if (app.Environment.IsDevelopment())
     await app.SeedDevAsync();
 }
 
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseCors("DefaultCorsPolicy"); 
 app.UseAuthentication(); 
 app.UseAuthorization();

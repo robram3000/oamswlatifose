@@ -24,7 +24,7 @@ namespace oamswlatifose.Server.Model
                     "Could not find connection string 'DefaultConnection' in appsettings.json");
             }
 
-            optionsBuilder.UseSqlServer(connectionString);
+            optionsBuilder.UseNpgsql(connectionString);
 
             return new ApplicationDbContext(optionsBuilder.Options);
         }

@@ -270,7 +270,7 @@ namespace oamswlatifose.Server.Model
                     CanManageRoles = true,
                     CanAccessAdminPanel = true,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
                 },
                 new EMRoleBasedAccessControl
                 {
@@ -287,7 +287,7 @@ namespace oamswlatifose.Server.Model
                     CanManageRoles = false,
                     CanAccessAdminPanel = false,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
                 },
                 new EMRoleBasedAccessControl
                 {
@@ -304,7 +304,7 @@ namespace oamswlatifose.Server.Model
                     CanManageRoles = false,
                     CanAccessAdminPanel = false,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
                 }
             );
         }

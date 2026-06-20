@@ -362,10 +362,7 @@ namespace oamswlatifose.Server.Extensions
         {
             services.AddHealthChecks()
                 .AddDbContextCheck<ApplicationDbContext>()
-                .AddUrlGroup(new Uri(configuration["ExternalServices:EmailService"] ?? "http://localhost:5000"),
-                    "Email Service")
-                .AddProcessAllocatedMemoryHealthCheck(maximumMegabytesAllocated: 500)
-                .AddDiskStorageHealthCheck(setup => setup.AddDrive("C:\\", minimumFreeMegabytes: 10240));
+                .AddProcessAllocatedMemoryHealthCheck(maximumMegabytesAllocated: 500);
 
             return services;
         }
