@@ -12,6 +12,14 @@ namespace oamswlatifose.Server.DTO.Branch
         public double Longitude { get; set; }
         public int RadiusMeters { get; set; }
         public bool IsActive { get; set; }
+        public List<EmployeeRefDTO> AssignedEmployees { get; set; } = new();
+    }
+
+    /// <summary>Minimal employee reference used inside BranchDTO.</summary>
+    public class EmployeeRefDTO
+    {
+        public int EmployeeId { get; set; }
+        public string FullName { get; set; }
     }
 
     /// <summary>Create-or-update payload for a branch geofence (admin).</summary>
@@ -36,6 +44,9 @@ namespace oamswlatifose.Server.DTO.Branch
         public int RadiusMeters { get; set; } = 100;
 
         public bool IsActive { get; set; } = true;
+
+        /// <summary>EMEmployees.Id values to assign to this branch. Replaces the full set.</summary>
+        public List<int> EmployeeIds { get; set; } = new();
     }
 
     /// <summary>

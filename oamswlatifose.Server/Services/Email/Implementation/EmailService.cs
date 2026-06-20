@@ -35,6 +35,7 @@ namespace oamswlatifose.Server.Services.Email.Implementation
         private readonly EmailSettings _settings;
         private static readonly SemaphoreSlim _throttler = new SemaphoreSlim(10, 10);
         private static readonly Dictionary<string, Queue<DateTime>> _rateLimitTracker = new();
+        private static readonly HttpClient _http = new();
 
         /// <summary>
         /// Email service configuration settings
@@ -53,6 +54,8 @@ namespace oamswlatifose.Server.Services.Email.Implementation
             public int MaxEmailsPerHour { get; set; } = 500;
             public int MaxEmailsPerDay { get; set; } = 5000;
             public int RateLimitPerRecipient { get; set; } = 20;
+            public int TimeoutMs { get; set; } = 15000;
+            public string ResendApiKey { get; set; }
             public string BaseUrl { get; set; }
             public string TrackingPixelUrl { get; set; }
             public string UnsubscribeUrl { get; set; }
@@ -854,41 +857,86 @@ namespace oamswlatifose.Server.Services.Email.Implementation
         #region Private Helper Methods
 
         private async Task<ServiceResponse<EmailSendResultDTO>> SendEmailInternalAsync(
-      string to, string subject, string body, bool isHtml, List<EmailAttachmentDTO> attachments)
+            string to, string subject, string body, bool isHtml, List<EmailAttachmentDTO> attachments)
+        {
+            if (!IsValidEmail(to))
+                return ServiceResponse<EmailSendResultDTO>.FailureResult($"Invalid email address: {to}");
+
+            if (!await CheckRateLimitAsync(to))
+                return ServiceResponse<EmailSendResultDTO>.FailureResult("Rate limit exceeded for this recipient. Please try again later.");
+
+            // Use the Resend HTTP API when a key is configured (required on Railway, which blocks SMTP).
+            // Falls back to direct SMTP for local/dev environments where no key is set.
+            if (!string.IsNullOrWhiteSpace(_settings.ResendApiKey))
+                return await SendViaResendAsync(to, subject, body, isHtml);
+
+            return await SendViaSmtpAsync(to, subject, body, isHtml, attachments);
+        }
+
+        private async Task<ServiceResponse<EmailSendResultDTO>> SendViaResendAsync(
+            string to, string subject, string body, bool isHtml)
         {
             try
             {
-                // Validate email
-                if (!IsValidEmail(to))
+                var trackingId = GenerateTrackingId();
+                var htmlBody = isHtml ? body : null;
+                var textBody = isHtml ? StripHtml(body) : body;
+
+                var payload = System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    return ServiceResponse<EmailSendResultDTO>.FailureResult($"Invalid email address: {to}");
+                    from = $"{_settings.FromName} <{_settings.FromEmail}>",
+                    to = new[] { to },
+                    subject,
+                    html = htmlBody,
+                    text = textBody,
+                });
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.ResendApiKey);
+                req.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+
+                using var resp = await _http.SendAsync(req);
+                var respBody = await resp.Content.ReadAsStringAsync();
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Resend API {Status}: {Body}", (int)resp.StatusCode, respBody);
+                    await LogEmailSend(to, subject, trackingId, false, $"Resend {resp.StatusCode}");
+                    return ServiceResponse<EmailSendResultDTO>.FailureResult($"Email delivery failed ({resp.StatusCode}): {respBody}");
                 }
 
-                // Check rate limit
-                if (!await CheckRateLimitAsync(to))
-                {
-                    return ServiceResponse<EmailSendResultDTO>.FailureResult(
-                        "Rate limit exceeded for this recipient. Please try again later.");
-                }
+                await LogEmailSend(to, subject, trackingId, true, null);
+                _logger.LogInformation("Email sent via Resend to {To} ({TrackingId})", to, trackingId);
 
-                // Create email message
+                return ServiceResponse<EmailSendResultDTO>.SuccessResult(new EmailSendResultDTO
+                {
+                    TrackingId = trackingId, To = to, Subject = subject,
+                    SentAt = DateTime.UtcNow, Status = "Sent",
+                }, "Email sent successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Resend error sending to {To}", to);
+                await LogEmailSend(to, subject, null, false, ex.Message);
+                return ServiceResponse<EmailSendResultDTO>.FailureResult($"Failed to send email: {ex.Message}");
+            }
+        }
+
+        private async Task<ServiceResponse<EmailSendResultDTO>> SendViaSmtpAsync(
+            string to, string subject, string body, bool isHtml, List<EmailAttachmentDTO> attachments)
+        {
+            try
+            {
+                var trackingId = GenerateTrackingId();
+
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(_settings.FromName, _settings.FromEmail));
                 message.To.Add(new MailboxAddress("", to));
                 message.Subject = subject;
 
-                // Generate tracking ID
-                var trackingId = GenerateTrackingId();
-
-                // Build body with tracking pixel if enabled
                 var bodyBuilder = new BodyBuilder();
-
                 if (isHtml)
                 {
-                    if (_settings.EnableTracking)
-                    {
-                        body = AddTrackingPixel(body, trackingId);
-                    }
                     bodyBuilder.HtmlBody = body;
                     bodyBuilder.TextBody = StripHtml(body);
                 }
@@ -897,70 +945,44 @@ namespace oamswlatifose.Server.Services.Email.Implementation
                     bodyBuilder.TextBody = body;
                 }
 
-                // Add attachments
                 if (attachments != null && attachments.Any())
                 {
                     foreach (var attachment in attachments)
                     {
-                        var attachmentData = Convert.FromBase64String(attachment.Content);
-                        bodyBuilder.Attachments.Add(attachment.FileName, attachmentData,
+                        var data = Convert.FromBase64String(attachment.Content);
+                        bodyBuilder.Attachments.Add(attachment.FileName, data,
                             MimeKit.ContentType.Parse(attachment.ContentType));
                     }
                 }
 
                 message.Body = bodyBuilder.ToMessageBody();
 
-                // Send email with proper SecureSocketOptions
-                using var client = new MailKit.Net.Smtp.SmtpClient();
+                SecureSocketOptions socketOptions = _settings.SmtpPort == 465
+                    ? SecureSocketOptions.SslOnConnect
+                    : _settings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
 
-                // Configure secure socket options based on port and SSL setting
-                SecureSocketOptions socketOptions;
-
-                if (_settings.SmtpPort == 465)
-                {
-                    socketOptions = SecureSocketOptions.SslOnConnect;
-                }
-                else if (_settings.EnableSsl)
-                {
-                    socketOptions = SecureSocketOptions.StartTls;
-                }
-                else
-                {
-                    socketOptions = SecureSocketOptions.Auto;
-                }
-
+                using var client = new MailKit.Net.Smtp.SmtpClient { Timeout = _settings.TimeoutMs };
                 await client.ConnectAsync(_settings.SmtpServer, _settings.SmtpPort, socketOptions);
 
                 if (!string.IsNullOrEmpty(_settings.SmtpUsername))
-                {
                     await client.AuthenticateAsync(_settings.SmtpUsername, _settings.SmtpPassword);
-                }
 
                 await client.SendAsync(message);
                 await client.DisconnectAsync(true);
 
-                // Log successful send
                 await LogEmailSend(to, subject, trackingId, true, null);
+                _logger.LogInformation("Email sent via SMTP to {To} ({TrackingId})", to, trackingId);
 
-                var result = new EmailSendResultDTO
+                return ServiceResponse<EmailSendResultDTO>.SuccessResult(new EmailSendResultDTO
                 {
-                    TrackingId = trackingId,
-                    To = to,
-                    Subject = subject,
-                    SentAt = DateTime.UtcNow,
-                    Status = "Sent"
-                };
-
-                _logger.LogInformation("Email sent successfully to {To} with tracking ID {TrackingId}", to, trackingId);
-
-                return ServiceResponse<EmailSendResultDTO>.SuccessResult(result, "Email sent successfully");
+                    TrackingId = trackingId, To = to, Subject = subject,
+                    SentAt = DateTime.UtcNow, Status = "Sent",
+                }, "Email sent successfully");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending email to {To}", to);
-
+                _logger.LogError(ex, "SMTP error sending to {To}", to);
                 await LogEmailSend(to, subject, null, false, ex.Message);
-
                 return ServiceResponse<EmailSendResultDTO>.FailureResult($"Failed to send email: {ex.Message}");
             }
         }

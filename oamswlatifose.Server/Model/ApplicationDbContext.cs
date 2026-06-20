@@ -23,6 +23,8 @@ namespace oamswlatifose.Server.Model
         public DbSet<EMAttendance> EMAttendance { get; set; }
         public DbSet<EMWorkSchedule> EMWorkSchedules { get; set; }
         public DbSet<EMAttendanceOtp> EMAttendanceOtps { get; set; }
+        public DbSet<EMLeaveRequest> EMLeaveRequests { get; set; }
+        public DbSet<EMWorkEvent> EMWorkEvents { get; set; }
 
         // Branch geofences
         public DbSet<EMBranch> EMBranches { get; set; }
@@ -155,9 +157,14 @@ namespace oamswlatifose.Server.Model
                     .HasMaxLength(255);
 
                 // Relationships
-              entity.HasOne(e => e.UserAccount)
+                entity.HasOne(e => e.UserAccount)
                     .WithOne(u => u.Employee)
                     .HasForeignKey<EMAuthorizeruser>(u => u.EmployeeId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.Branch)
+                    .WithMany(b => b.Employees)
+                    .HasForeignKey(e => e.BranchId)
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
@@ -211,6 +218,30 @@ namespace oamswlatifose.Server.Model
                 entity.Property(e => e.Purpose).HasMaxLength(20);
                 entity.Property(e => e.Email).HasMaxLength(255);
                 entity.Property(e => e.WorkLocation).HasMaxLength(20);
+            });
+
+            // EMLeaveRequest Configuration
+            modelBuilder.Entity<EMLeaveRequest>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.EmployeeId);
+                entity.HasIndex(e => e.Status);
+                entity.Property(e => e.LeaveType).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+                entity.HasOne(e => e.Employee)
+                    .WithMany()
+                    .HasForeignKey(e => e.EmployeeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // EMWorkEvent Configuration
+            modelBuilder.Entity<EMWorkEvent>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.Date);
+                entity.HasIndex(e => e.EventType);
+                entity.Property(e => e.EventType).IsRequired().HasMaxLength(30);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
             });
 
             // EMBranch Configuration — office geofences.

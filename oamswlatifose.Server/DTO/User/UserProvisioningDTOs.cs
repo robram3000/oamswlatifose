@@ -53,6 +53,7 @@ namespace oamswlatifose.Server.DTO.User
         public string Department { get; set; }
         public bool IsActive { get; set; }
         public string CreatedAtFormatted { get; set; }
+        public string HiredAtFormatted { get; set; }
     }
 
     /// <summary>Admin/HR payload to update an existing employee + login account.</summary>

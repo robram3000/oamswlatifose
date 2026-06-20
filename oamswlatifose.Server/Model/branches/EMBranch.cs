@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using oamswlatifose.Server.Model.user;
 
 namespace oamswlatifose.Server.Model.branches
 {
@@ -40,5 +42,7 @@ namespace oamswlatifose.Server.Model.branches
         public DateTime CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; }
+
+        public virtual ICollection<EMEmployees> Employees { get; set; } = new List<EMEmployees>();
     }
 }

@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using oamswlatifose.Server.DTO.attendances;
+using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Services;
 using oamswlatifose.Server.Services.Attendance.Interfaces;
 using oamswlatifose.Server.Utilities.Security;
@@ -37,15 +39,18 @@ namespace oamswlatifose.Server.Controllers
     {
         private readonly IAttendanceService _attendanceService;
         private readonly IAttendanceVerificationService _verificationService;
+        private readonly ApplicationDbContext _db;
         private readonly ILogger<AttendanceController> _logger;
 
         public AttendanceController(
             IAttendanceService attendanceService,
             IAttendanceVerificationService verificationService,
+            ApplicationDbContext db,
             ILogger<AttendanceController> logger)
         {
             _attendanceService = attendanceService ?? throw new ArgumentNullException(nameof(attendanceService));
             _verificationService = verificationService ?? throw new ArgumentNullException(nameof(verificationService));
+            _db = db ?? throw new ArgumentNullException(nameof(db));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -699,6 +704,9 @@ namespace oamswlatifose.Server.Controllers
         {
             try
             {
+                var hrBlock = await CheckHrEditRestriction(id);
+                if (hrBlock != null) return hrBlock;
+
                 var result = await _attendanceService.UpdateAttendanceAsync(id, updateDto, GetCurrentUserId());
 
                 if (!result.IsSuccess)
@@ -737,6 +745,9 @@ namespace oamswlatifose.Server.Controllers
         {
             try
             {
+                var hrBlock = await CheckHrEditRestriction(id);
+                if (hrBlock != null) return hrBlock;
+
                 var result = await _attendanceService.DeleteAttendanceAsync(id, GetCurrentUserId());
 
                 if (!result.IsSuccess)
@@ -804,16 +815,74 @@ namespace oamswlatifose.Server.Controllers
 
         #endregion
 
+        /// <summary>
+        /// Returns the logged-in employee's attendance records for a specific calendar month.
+        /// Used to populate the monthly attendance calendar.
+        /// </summary>
+        [HttpGet("my-calendar")]
+        [ProducesResponseType(typeof(ServiceResponse<IEnumerable<AttendanceResponseDTO>>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyCalendar([FromQuery] int year, [FromQuery] int month)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return Ok(ServiceResponse<IEnumerable<AttendanceResponseDTO>>.SuccessResult(
+                        Enumerable.Empty<AttendanceResponseDTO>()));
+
+                if (year < 2000 || year > 2100 || month < 1 || month > 12)
+                    return BadRequest(ServiceResponse<IEnumerable<AttendanceResponseDTO>>.FailureResult(
+                        "Invalid year or month"));
+
+                var start = new DateTime(year, month, 1);
+                var end = start.AddMonths(1).AddDays(-1);
+
+                var result = await _attendanceService.GetEmployeeAttendanceByDateRangeAsync(
+                    employeeId, start, end);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting calendar for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<IEnumerable<AttendanceResponseDTO>>.FromException(
+                    ex, "Failed to get calendar data"));
+            }
+        }
+
         #region Helper Methods
 
         private int GetEmployeeIdForCurrentUser()
         {
-            // This would typically come from a service that maps user accounts to employees
             var employeeIdClaim = User.FindFirst("employee_id");
             if (employeeIdClaim != null && int.TryParse(employeeIdClaim.Value, out var employeeId))
                 return employeeId;
 
             return 0;
+        }
+
+        private string GetCurrentRoleName() => User.FindFirst("role_name")?.Value ?? "";
+
+        /// <summary>
+        /// Returns an error response if an HR user tries to edit/delete an attendance record
+        /// belonging to another HR or Admin employee. Admins bypass this restriction.
+        /// </summary>
+        private async Task<IActionResult> CheckHrEditRestriction(int attendanceId)
+        {
+            var roleName = GetCurrentRoleName();
+            if (roleName != "HR") return null; // Only restrict HR; Admins can edit anyone
+
+            var record = await _db.EMAttendance
+                .Include(a => a.Employee)
+                    .ThenInclude(e => e.UserAccount)
+                        .ThenInclude(u => u.Role)
+                .FirstOrDefaultAsync(a => a.Id == attendanceId);
+
+            if (record?.Employee?.UserAccount?.Role?.RoleName is "HR" or "Admin")
+                return StatusCode(403, ServiceResponse<bool>.FailureResult(
+                    "HR users cannot modify attendance records of other HR or Admin employees"));
+
+            return null;
         }
 
         private string GetDeviceInfo()

@@ -1,11 +1,12 @@
-﻿using oamswlatifose.Server.Model.security;
+﻿using oamswlatifose.Server.Model.branches;
+using oamswlatifose.Server.Model.security;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace oamswlatifose.Server.Model.user
 {
-    [Table("EMEmployees")] 
+    [Table("EMEmployees")]
     public class EMEmployees
     {
         [Key]
@@ -50,13 +51,18 @@ namespace oamswlatifose.Server.Model.user
         public string City { get; set; }
 
 
+        public DateTime? HiredAt { get; set; }
+
         public DateTime CreatedAt { get; set; }
 
-        public DateTime UpdatedAt { get; set; } 
+        public DateTime UpdatedAt { get; set; }
 
+
+        [ForeignKey("Branch")]
+        public int? BranchId { get; set; }
+        public virtual EMBranch Branch { get; set; }
 
         public virtual EMAuthorizeruser UserAccount { get; set; }
         public virtual ICollection<EMEmployees> Attendances { get; set; }
-
     }
 }

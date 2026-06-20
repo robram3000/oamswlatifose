@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { attendanceApi, scheduleApi, auth } from '../../lib/api'
+import { attendanceApi, scheduleApi, auth, workEventApi } from '../../lib/api'
 import { getCurrentLocation } from '../../lib/geo'
 import { Icons, Sparkline, statusColor, statusBadge, locationBadge } from '../../lib/ui'
 import MonitoringTable from './MonitoringTable'
@@ -7,6 +7,9 @@ import ScheduleEditor from './ScheduleEditor'
 import BranchEditor from './BranchEditor'
 import UserManager from './UserManager'
 import OtpModal from './OtpModal'
+import ConfirmDeleteModal from './ConfirmDeleteModal'
+import AttendanceCalendar from './AttendanceCalendar'
+import LeaveRequestView from './LeaveRequestView'
 
 const RANGES = [
   { key: 'today', label: 'Today', days: 1 },
@@ -31,6 +34,7 @@ const isTimeOffStatus = (s) => /time.?off/i.test(s || '')
 
 export default function AttendanceConsole({ user, onSignOut }) {
   const isManager = auth.isManager
+  const isHR = auth.isHR
   const [view, setView] = useState('monitoring')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -56,11 +60,16 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [editSchedEmpId, setEditSchedEmpId] = useState(null)
   const [showSchedModal, setShowSchedModal] = useState(false)
   const [viewSched, setViewSched] = useState(null)
+  const [deleteSchedTarget, setDeleteSchedTarget] = useState(null)
 
   // Admin attendance (all employees range view)
   const [adminAttRows, setAdminAttRows] = useState([])
   const [adminAttLoading, setAdminAttLoading] = useState(false)
   const [adminRangeKey, setAdminRangeKey] = useState('7d')
+
+  // Dashboard trend (7-day history grouped by date)
+  const [dashTrend, setDashTrend] = useState([])
+  const [dashTrendLoading, setDashTrendLoading] = useState(false)
 
   const range = RANGES.find((r) => r.key === rangeKey) || RANGES[2]
   const adminRange = RANGES.find((r) => r.key === adminRangeKey) || RANGES[1]
@@ -97,16 +106,57 @@ export default function AttendanceConsole({ user, onSignOut }) {
     setAdminAttLoading(false)
   }, [])
 
+  const loadDashTrend = useCallback(async () => {
+    if (!isManager) return
+    setDashTrendLoading(true)
+    const res = await attendanceApi.adminAll(rangeStart(7), localDateStr())
+    const rows = res.isSuccess ? (res.data?.items ?? res.data ?? []) : []
+    const byDate = {}
+    rows.forEach((r) => {
+      const d = r.date || r.attendanceDate
+      if (!d) return
+      if (!byDate[d]) byDate[d] = { date: d, present: 0, late: 0, timeOff: 0 }
+      if (isPresent(r.status)) byDate[d].present++
+      else if (isLate(r.status)) byDate[d].late++
+      else if (isTimeOffStatus(r.status)) byDate[d].timeOff++
+    })
+    setDashTrend(Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)))
+    setDashTrendLoading(false)
+  }, [isManager])
+
   useEffect(() => { loadMine() }, [loadMine])
   useEffect(() => { if (isManager) loadTeam(teamDate) }, [isManager, teamDate, loadTeam])
   useEffect(() => {
     if (isManager && view === 'attendance') loadAdminAtt(adminRange.days)
   }, [isManager, view, adminRangeKey, loadAdminAtt, adminRange.days])
+  useEffect(() => {
+    if (isManager && view === 'monitoring') loadDashTrend()
+  }, [isManager, view, loadDashTrend])
+
+  // Tick every minute so time-based button states stay current
+  const [nowMin, setNowMin] = useState(() => {
+    const n = new Date(); return n.getHours() * 60 + n.getMinutes()
+  })
+  useEffect(() => {
+    const id = setInterval(() => {
+      const n = new Date(); setNowMin(n.getHours() * 60 + n.getMinutes())
+    }, 30000)
+    return () => clearInterval(id)
+  }, [])
 
   // ── Derived: employee clock state ─────────────────────────────────
   const hasTimeIn = !!(today && (today.timeInFormatted || today.timeIn))
   const hasTimeOut = !!(today && (today.timeOutFormatted || today.timeOut))
   const isTimeOff = !!(today && isTimeOffStatus(today.status))
+
+  // Time Off is only enabled once the shift end time has been reached.
+  // If no schedule is assigned, allow it freely.
+  const canTimeOff = useMemo(() => {
+    if (!schedule?.endTime) return true
+    const parts = schedule.endTime.split(':').map(Number)
+    const endMin = parts[0] * 60 + (parts[1] || 0)
+    return nowMin >= endMin
+  }, [schedule, nowMin])
 
   // ── Derived: employee range-filtered history + metrics ─────────────
   const filtered = useMemo(() => {
@@ -153,7 +203,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const startTimeIn = async () => {
     setNotice(null)
     setLocating(true)
-    lastCoords.current = await getCurrentLocation()
+    lastCoords.current = await getCurrentLocation(3000) // 3 s max — location is optional
     setLocating(false)
     setActing(true)
     const res = await requestOtp()
@@ -194,6 +244,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
     loadMine()
     if (isManager) {
       loadTeam(teamDate)
+      if (view === 'monitoring') loadDashTrend()
       if (view === 'attendance') loadAdminAtt(adminRange.days)
     }
   }
@@ -204,28 +255,36 @@ export default function AttendanceConsole({ user, onSignOut }) {
   }
   const closeSchedModal = () => { setShowSchedModal(false); setEditSchedEmpId(null) }
 
-  const handleDeleteSchedule = async (row) => {
-    if (!window.confirm(`Delete schedule for ${row.employeeName}?`)) return
-    const res = await scheduleApi.remove(row.employeeId)
+  const handleDeleteSchedule = (row) => setDeleteSchedTarget(row)
+
+  const confirmDeleteSchedule = async () => {
+    const res = await scheduleApi.remove(deleteSchedTarget.employeeId)
+    setDeleteSchedTarget(null)
     setNotice({ type: res.isSuccess ? 'ok' : 'error', text: res.message || (res.isSuccess ? 'Schedule deleted.' : 'Delete failed.') })
     if (res.isSuccess) loadTeam(teamDate)
   }
 
-  // ── Primary action button — hidden entirely for Admin/HR ──────────
+  // ── Primary action button — hidden for Admin, shown for HR & User ──
   const ActionButton = ({ inHeader }) => {
-    if (isManager) return null
+    if (auth.isAdmin) return null
     if (isTimeOff) {
       return <button className="btnGhost" disabled>{Icons.umbrella} Time Off</button>
     }
     if (!hasTimeIn) {
       const busy = acting || locating
+      const endLabel = schedule?.endTime ? schedule.endTime.slice(0, 5) : null
       return (
         <div className="actionBtns">
           <button className="btnPrimary" onClick={startTimeIn} disabled={busy}>
             {busy ? <span className="spinner" /> : Icons.clock}
             {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
           </button>
-          <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
+          <button
+            className="btnGhost"
+            onClick={clockTimeOff}
+            disabled={busy || !canTimeOff}
+            title={!canTimeOff ? `Available after shift ends${endLabel ? ` (${endLabel})` : ''}` : undefined}
+          >
             {Icons.umbrella} Time Off
           </button>
         </div>
@@ -263,6 +322,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const VIEWS = {
     monitoring: { title: isManager ? 'Dashboard' : 'Attendance monitoring', sub: isManager ? "Today's attendance overview." : 'Clock in against your schedule — verified by an emailed one-time code.' },
     attendance: { title: isManager ? 'All attendance' : 'My attendance', sub: isManager ? "Every employee's attendance records." : 'Your attendance history, location and on-time rate.' },
+    calendar: { title: 'My calendar', sub: 'Monthly view of your attendance — present, absent, leave, weekly off and holidays.' },
+    leave: { title: 'Leave requests', sub: isManager ? 'Review and approve employee leave requests.' : 'Request leave and view your leave history.' },
+    events: { title: 'Work events', sub: 'Manage custom holidays, days off, and attendance open/close by date.' },
     schedule: { title: 'Schedule', sub: isManager ? 'Set work schedules per employee.' : 'Your assigned work schedule.' },
     users: { title: 'Users', sub: 'Create employee accounts and assign their role.' },
   }
@@ -289,6 +351,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
         </div>
         {navItem('monitoring', Icons.monitor, isManager ? 'Dashboard' : 'Monitoring')}
         {navItem('attendance', Icons.clock, isManager ? 'All attendance' : 'My attendance')}
+        {!isManager && navItem('calendar', Icons.calendar, 'My calendar')}
+        {navItem('leave', Icons.leave, 'Leave')}
+        {isManager && navItem('events', Icons.events, 'Work events')}
         {navItem('schedule', Icons.calendar, 'Schedule')}
         {isManager && navItem('users', Icons.users, 'Users')}
       </aside>
@@ -348,6 +413,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
                     <MetricCard title="Total records" value={dashStats.total} color="var(--text-secondary)" series={[]} />
                   </div>
 
+                  <div className="chartsRow">
+                    <div className="panel" style={{ flex: '1 1 260px', minWidth: 220 }}>
+                      <h3 className="panel__title">Today&apos;s breakdown</h3>
+                      <DonutChart present={dashStats.present} late={dashStats.late} timeOff={dashStats.timeOff} />
+                    </div>
+                    <div className="panel" style={{ flex: '2 1 360px', minWidth: 280 }}>
+                      <h3 className="panel__title">7-day trend</h3>
+                      <TrendBar data={dashTrend} loading={dashTrendLoading} />
+                    </div>
+                  </div>
+
                   <MonitoringTable
                     loading={teamLoading}
                     emptyText="No attendance recorded for this date."
@@ -373,6 +449,21 @@ export default function AttendanceConsole({ user, onSignOut }) {
                   />
 
                   <BranchEditor onChanged={() => loadTeam(teamDate)} />
+
+                  {/* HR users can also clock in/out for themselves */}
+                  {isHR && (
+                    <div className="panel" style={{ marginTop: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                        <div>
+                          <h3 className="panel__title" style={{ margin: 0 }}>My attendance today</h3>
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                            {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? `Done · In ${today?.timeInFormatted} · Out ${today?.timeOutFormatted}` : `Clocked in at ${today?.timeInFormatted}`}
+                          </div>
+                        </div>
+                        <div className="actions"><ActionButton /></div>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 /* ─── Employee monitoring ─── */
@@ -467,6 +558,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
             </>
           )}
 
+          {/* ===================== CALENDAR ===================== */}
+          {view === 'calendar' && !isManager && (
+            <AttendanceCalendar schedule={schedule} />
+          )}
+
+          {/* ===================== LEAVE ===================== */}
+          {view === 'leave' && <LeaveRequestView />}
+
+          {/* ===================== WORK EVENTS ===================== */}
+          {view === 'events' && isManager && <WorkEventPanel />}
+
           {/* ===================== SCHEDULE ===================== */}
           {view === 'schedule' && (
             <>
@@ -522,6 +624,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
         <OtpModal info={otpInfo} onVerify={verify} onResend={requestOtp} onClose={() => setOtpInfo(null)} />
       )}
 
+      {/* Delete schedule confirmation modal */}
+      {deleteSchedTarget && (
+        <ConfirmDeleteModal
+          title="Delete schedule"
+          description={`This will permanently remove the work schedule for ${deleteSchedTarget.employeeName}. They will default to a 09:00 start until a new schedule is set.`}
+          confirmText={deleteSchedTarget.employeeName}
+          onConfirm={confirmDeleteSchedule}
+          onClose={() => setDeleteSchedTarget(null)}
+        />
+      )}
+
       {/* Schedule editor modal */}
       {showSchedModal && (
         <div className="modalOverlay" onClick={closeSchedModal}>
@@ -570,6 +683,225 @@ function MetricCard({ title, value, color, series }) {
       <div className="cardValueRow"><span className="cardValue" style={{ color }}>{value}</span></div>
       <div className="cardSpark">
         {hasData ? <Sparkline data={series} color={color} /> : <span className="muted" style={{ fontSize: 12 }}>No data</span>}
+      </div>
+    </div>
+  )
+}
+
+function DonutChart({ present, late, timeOff }) {
+  const total = present + late + timeOff
+  if (!total) return <p className="muted" style={{ textAlign: 'center', margin: '24px 0', fontSize: 13 }}>No attendance recorded today</p>
+
+  const r = 34, cx = 50, cy = 50
+  const C = 2 * Math.PI * r
+  const segs = [
+    { value: present, color: 'var(--gcp-green)', label: 'Present' },
+    { value: late, color: 'var(--gcp-yellow)', label: 'Late' },
+    { value: timeOff, color: 'var(--gcp-blue)', label: 'Time Off' },
+  ].filter((s) => s.value > 0)
+
+  let acc = 0
+  const slices = segs.map((s) => {
+    const len = (s.value / total) * C
+    const offset = acc
+    acc += len
+    return { ...s, len, offset }
+  })
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, flexWrap: 'wrap', padding: '8px 0' }}>
+      <svg viewBox="0 0 100 100" width={110} height={110} style={{ flexShrink: 0 }}>
+        <g transform="rotate(-90 50 50)">
+          {slices.map((s) => (
+            <circle key={s.label} r={r} cx={cx} cy={cy}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={20}
+              strokeDasharray={`${s.len} ${C - s.len}`}
+              strokeDashoffset={-s.offset}
+            />
+          ))}
+        </g>
+        <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="700" fill="var(--text-primary)">{total}</text>
+        <text x="50" y="60" textAnchor="middle" fontSize="9" fill="var(--text-secondary)">total</text>
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {segs.map((s) => (
+          <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+            <span style={{ color: 'var(--text-secondary)', minWidth: 56 }}>{s.label}</span>
+            <strong>{s.value}</strong>
+            <span className="muted" style={{ fontSize: 11 }}>({Math.round(s.value / total * 100)}%)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TrendBar({ data, loading }) {
+  if (loading) return <p className="muted" style={{ textAlign: 'center', padding: 24, fontSize: 13 }}>Loading...</p>
+  if (!data.length) return <p className="muted" style={{ textAlign: 'center', margin: '24px 0', fontSize: 13 }}>No data yet</p>
+
+  const W = 460, H = 130
+  const PL = 28, PR = 8, PT = 8, PB = 32
+  const chartW = W - PL - PR
+  const chartH = H - PT - PB
+  const maxTotal = Math.max(...data.map((d) => d.present + d.late + d.timeOff), 1)
+  const colW = chartW / data.length
+  const barW = Math.max(colW * 0.55, 4)
+
+  const fmt = (dateStr) => {
+    const parts = dateStr.split('-')
+    return `${parts[1]}/${parts[2]}`
+  }
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
+        {[0, 0.5, 1].map((frac) => {
+          const y = PT + chartH * (1 - frac)
+          return (
+            <g key={frac}>
+              <line x1={PL} x2={W - PR} y1={y} y2={y} stroke="var(--border-color)" strokeDasharray="2 4" opacity="0.5" />
+              <text x={PL - 4} y={y} textAnchor="end" fontSize="8" dy="0.35em" fill="var(--text-secondary)">
+                {Math.round(frac * maxTotal)}
+              </text>
+            </g>
+          )
+        })}
+
+        {data.map((d, i) => {
+          const x = PL + i * colW + colW / 2 - barW / 2
+          const base = PT + chartH
+          const scaleH = (v) => (v / maxTotal) * chartH
+          const pH = scaleH(d.present)
+          const lH = scaleH(d.late)
+          const tH = scaleH(d.timeOff)
+          return (
+            <g key={d.date}>
+              {d.present > 0 && <rect x={x} y={base - pH} width={barW} height={pH} fill="var(--gcp-green)" rx={2} />}
+              {d.late > 0 && <rect x={x} y={base - pH - lH} width={barW} height={lH} fill="var(--gcp-yellow)" rx={2} />}
+              {d.timeOff > 0 && <rect x={x} y={base - pH - lH - tH} width={barW} height={tH} fill="var(--gcp-blue)" rx={2} />}
+              <text x={x + barW / 2} y={base + 14} textAnchor="middle" fontSize="9" fill="var(--text-secondary)">{fmt(d.date)}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+        {[['var(--gcp-green)', 'Present'], ['var(--gcp-yellow)', 'Late'], ['var(--gcp-blue)', 'Time Off']].map(([c, l]) => (
+          <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display: 'inline-block' }} />{l}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const EVENT_TYPES = ['Holiday', 'DayOff', 'Closed']
+const EVENT_COLORS = {
+  Holiday: '#9334e6',
+  DayOff: 'var(--text-muted)',
+  Closed: 'var(--gcp-red)',
+}
+
+function WorkEventPanel() {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState(null)
+  const [form, setForm] = useState({ date: now.toISOString().slice(0, 10), eventType: 'Holiday', name: '' })
+  const [saving, setSaving] = useState(false)
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const res = await workEventApi.byMonth(year, month)
+    setEvents(res.isSuccess ? (res.data ?? []) : [])
+    setLoading(false)
+  }, [year, month])
+
+  useEffect(() => { load() }, [load])
+
+  const addEvent = async () => {
+    if (!form.name.trim()) { setNotice({ type: 'error', text: 'Name is required.' }); return }
+    setSaving(true)
+    const res = await workEventApi.create({ date: form.date, eventType: form.eventType, name: form.name })
+    setSaving(false)
+    if (res.isSuccess) { setForm(f => ({ ...f, name: '' })); setNotice({ type: 'ok', text: 'Event added.' }); load() }
+    else setNotice({ type: 'error', text: res.message })
+  }
+
+  const removeEvent = async (id) => {
+    const res = await workEventApi.remove(id)
+    if (res.isSuccess) load()
+    else setNotice({ type: 'error', text: res.message })
+  }
+
+  const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12) } else setMonth(m => m - 1) }
+  const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1) } else setMonth(m => m + 1) }
+
+  return (
+    <div>
+      {notice && <p className={`alert alert--${notice.type === 'ok' ? 'ok' : 'error'}`} style={{ marginBottom: 16 }}>{notice.text}</p>}
+
+      <div className="panel">
+        <h3 className="panel__title">Add work event</h3>
+        <div className="fieldRow" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="field">
+            <label>Date *</label>
+            <input type="date" className="input" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>Type *</label>
+            <select className="select" value={form.eventType} onChange={e => setForm(f => ({ ...f, eventType: e.target.value }))}>
+              {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ flex: 2 }}>
+            <label>Name / Description *</label>
+            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. Rizal Day, Team Building, Office Closed" />
+          </div>
+          <div className="field">
+            <label>&nbsp;</label>
+            <button className="btnPrimary" onClick={addEvent} disabled={saving}>{saving ? 'Adding…' : '+ Add'}</button>
+          </div>
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          <strong>Holiday</strong> — company/public holiday &nbsp;·&nbsp;
+          <strong>DayOff</strong> — no attendance expected &nbsp;·&nbsp;
+          <strong>Closed</strong> — blocks clock-ins for that day
+        </p>
+      </div>
+
+      <div className="panel" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <button className="iconBtn" onClick={prevMonth}>{Icons.chevLeft}</button>
+          <span style={{ fontWeight: 600, minWidth: 130, textAlign: 'center' }}>{MONTHS[month - 1]} {year}</span>
+          <button className="iconBtn" onClick={nextMonth}>{Icons.chevRight}</button>
+        </div>
+
+        {loading ? <p className="muted">Loading…</p>
+          : events.length === 0
+          ? <p className="muted" style={{ fontSize: 13 }}>No work events this month.</p>
+          : events.map(ev => (
+            <div key={ev.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
+              <div>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 10 }}>{ev.date}</span>
+                <span style={{ fontWeight: 600, color: EVENT_COLORS[ev.eventType] || 'var(--text-primary)', marginRight: 8 }}>[{ev.eventType}]</span>
+                <span style={{ fontSize: 14 }}>{ev.name}</span>
+              </div>
+              <button className="iconBtn" onClick={() => removeEvent(ev.id)} title="Remove" style={{ color: 'var(--gcp-red)' }}>
+                {Icons.trash}
+              </button>
+            </div>
+          ))
+        }
       </div>
     </div>
   )

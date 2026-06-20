@@ -42,6 +42,7 @@ namespace oamswlatifose.Server.Services.UserProvisioning.Implementation
                     Department = u.Employee?.Department,
                     IsActive = u.IsActive,
                     CreatedAtFormatted = u.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
+                    HiredAtFormatted = u.Employee?.HiredAt?.ToString("yyyy-MM-dd") ?? u.Employee?.CreatedAt.ToString("yyyy-MM-dd"),
                 }).ToList();
 
                 return ServiceResponse<List<UserAccountSummaryDTO>>.SuccessResult(list);

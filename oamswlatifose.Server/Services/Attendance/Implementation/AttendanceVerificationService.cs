@@ -67,6 +67,13 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                 if (todays != null && todays.TimeIn.HasValue)
                     return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("You have already clocked in today");
 
+                // Block clock-in when HR/Admin has marked today as Closed.
+                var closedEvent = await _db.EMWorkEvents
+                    .FirstOrDefaultAsync(e => e.Date == today && e.EventType == "Closed");
+                if (closedEvent != null)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
+                        $"Attendance is closed for today ({closedEvent.Name}). Contact HR if this is an error.");
+
                 // Classify the GPS point against the branch geofences (Office vs Outside).
                 var loc = await _branchService.ResolveAsync(latitude, longitude);
 
@@ -110,29 +117,23 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                 var emailTo = employee.Email;
                 var emailBody = BuildOtpEmail(name, code, OtpExpiryMinutes);
 
-                // Send in background so the clock-in response is instant — the user sees the
-                // OTP modal immediately while the email is on its way (SMTP takes 3–6 s).
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var r = await _emailService.SendHtmlEmailAsync(
-                            emailTo, "Your attendance clock-in code", emailBody);
-                        if (!r.IsSuccess)
-                            _logger.LogWarning("OTP email failed for employee {EmployeeId}: {Msg}", employeeId, r.Message);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "OTP email exception for employee {EmployeeId}", employeeId);
-                    }
-                });
+                // Await the send so that: (a) the request scope is still alive, avoiding
+                // ObjectDisposedException on the log repository, and (b) SMTP errors surface
+                // to the caller instead of being silently swallowed in a fire-and-forget task.
+                var emailResult = await _emailService.SendHtmlEmailAsync(
+                    emailTo, "Your attendance clock-in code", emailBody);
 
-                _logger.LogInformation("Clock-in OTP issued for employee {EmployeeId} from {Ip}", employeeId, clientIp);
+                if (!emailResult.IsSuccess)
+                    _logger.LogWarning("OTP email failed for employee {EmployeeId}: {Msg}", employeeId, emailResult.Message);
+                else
+                    _logger.LogInformation("Clock-in OTP issued for employee {EmployeeId} from {Ip}", employeeId, clientIp);
 
                 return ServiceResponse<AttendanceOtpRequestResultDTO>.SuccessResult(new AttendanceOtpRequestResultDTO
                 {
-                    Sent = true,
-                    Message = "Verification code sent to your email",
+                    Sent = emailResult.IsSuccess,
+                    Message = emailResult.IsSuccess
+                        ? "Verification code sent to your email"
+                        : $"Could not send the code — {emailResult.Message}",
                     EmailMasked = MaskEmail(employee.Email),
                     ExpiresInMinutes = OtpExpiryMinutes,
                     ExpiresAt = expiry,
@@ -141,7 +142,7 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                     BranchName = loc.BranchName,
                     OnSite = loc.OnSite,
                     DistanceMeters = loc.DistanceMeters
-                }, "Verification code sent");
+                }, emailResult.IsSuccess ? "Verification code sent" : "Email delivery failed");
             }
             catch (Exception ex)
             {

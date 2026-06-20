@@ -25,7 +25,7 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
         {
             try
             {
-                var query = _db.EMBranches.AsQueryable();
+                var query = _db.EMBranches.Include(b => b.Employees).AsQueryable();
                 if (activeOnly) query = query.Where(b => b.IsActive);
 
                 var list = await query.OrderBy(b => b.Name).ToListAsync();
@@ -48,7 +48,9 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
                 EMBranch branch;
                 if (dto.Id is > 0)
                 {
-                    branch = await _db.EMBranches.FirstOrDefaultAsync(b => b.Id == dto.Id);
+                    branch = await _db.EMBranches
+                        .Include(b => b.Employees)
+                        .FirstOrDefaultAsync(b => b.Id == dto.Id);
                     if (branch == null)
                         return ServiceResponse<BranchDTO>.FailureResult($"Branch {dto.Id} not found");
                     branch.UpdatedAt = DateTime.UtcNow;
@@ -67,6 +69,30 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
                 branch.IsActive = dto.IsActive;
 
                 await _db.SaveChangesAsync();
+
+                // Assign employees: unassign previous members not in the new list, assign new ones.
+                var newIds = dto.EmployeeIds ?? new List<int>();
+
+                // Employees currently assigned to this branch that are no longer in the list
+                var toUnassign = await _db.EMEmployees
+                    .Where(e => e.BranchId == branch.Id && !newIds.Contains(e.Id))
+                    .ToListAsync();
+                foreach (var e in toUnassign) e.BranchId = null;
+
+                // Employees in the new list — assign them (covers both new and already-assigned)
+                if (newIds.Count > 0)
+                {
+                    var toAssign = await _db.EMEmployees
+                        .Where(e => newIds.Contains(e.Id))
+                        .ToListAsync();
+                    foreach (var e in toAssign) e.BranchId = branch.Id;
+                }
+
+                await _db.SaveChangesAsync();
+
+                // Reload with employees for the response DTO
+                await _db.Entry(branch).Collection(b => b.Employees).LoadAsync();
+
                 return ServiceResponse<BranchDTO>.SuccessResult(ToDto(branch), "Branch saved");
             }
             catch (Exception ex)
@@ -83,6 +109,11 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
                 var branch = await _db.EMBranches.FirstOrDefaultAsync(b => b.Id == id);
                 if (branch == null)
                     return ServiceResponse<bool>.FailureResult("Branch not found");
+
+                // Unassign employees before deleting
+                var employees = await _db.EMEmployees.Where(e => e.BranchId == id).ToListAsync();
+                foreach (var e in employees) e.BranchId = null;
+                await _db.SaveChangesAsync();
 
                 _db.EMBranches.Remove(branch);
                 await _db.SaveChangesAsync();
@@ -147,6 +178,10 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
             Longitude = b.Longitude,
             RadiusMeters = b.RadiusMeters,
             IsActive = b.IsActive,
+            AssignedEmployees = b.Employees?
+                .Select(e => new EmployeeRefDTO { EmployeeId = e.Id, FullName = $"{e.FirstName} {e.LastName}" })
+                .OrderBy(e => e.FullName)
+                .ToList() ?? new(),
         };
     }
 }

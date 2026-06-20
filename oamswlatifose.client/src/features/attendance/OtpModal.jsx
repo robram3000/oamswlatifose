@@ -44,11 +44,19 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
     if (res.isSuccess) {
       setCode('')
       setSecsLeft((res.data?.expiresInMinutes || 10) * 60)
-      inputRef.current?.focus()
+      // Show delivery error from resend if SMTP failed
+      if (res.data?.sent === false) {
+        setError(res.data?.message || 'Email could not be delivered. Check SMTP settings.')
+      } else {
+        inputRef.current?.focus()
+      }
     } else {
       setError(res.message || 'Could not resend the code')
     }
   }
+
+  // Detect email delivery failure from the initial send
+  const emailFailed = info?.sent === false
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -56,9 +64,17 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
         <h2 className="modal__title">Verify your clock-in</h2>
         <p className="modal__sub">
           <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 6 }}>{Icons.mail}</span>
-          We emailed a code to <strong>{info?.emailMasked || 'your email'}</strong>.
+          {emailFailed
+            ? <>Email delivery failed for <strong>{info?.emailMasked || 'your email'}</strong>.</>
+            : <>We emailed a code to <strong>{info?.emailMasked || 'your email'}</strong>.</>}
           {info?.requestedTimeFormatted && <> Time-in captured at <strong>{info.requestedTimeFormatted}</strong>.</>}
         </p>
+
+        {emailFailed && (
+          <p className="alert alert--error" style={{ marginBottom: 12 }}>
+            {info?.message || 'Could not send the verification email. Try resending or contact Admin.'}
+          </p>
+        )}
 
         {info?.workLocation && (
           <p className={`alert ${info.onSite ? 'alert--ok' : info.workLocation === 'Unknown' ? 'alert--info' : 'alert--info'}`}

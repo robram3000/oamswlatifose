@@ -33,6 +33,12 @@ export const auth = {
     const role = auth.user?.roleName
     return role === 'Admin' || role === 'HR'
   },
+  get isHR() {
+    return auth.user?.roleName === 'HR'
+  },
+  get isAdmin() {
+    return auth.user?.roleName === 'Admin'
+  },
 }
 
 async function request(method, path, body) {
@@ -109,6 +115,7 @@ export const attendanceApi = {
   timeOff: () => api.post('/attendance/time-off', {}),
   byDate: (date) => api.get(`/attendance/admin/by-date/${date}`),
   employees: () => api.get('/employees?pageNumber=1&pageSize=200'),
+  myCalendar: (year, month) => api.get(`/attendance/my-calendar?year=${year}&month=${month}`),
 }
 
 export const branchApi = {
@@ -122,4 +129,18 @@ export const usersApi = {
   roles: () => api.get('/users/roles'),
   create: (dto) => api.post('/users', dto),
   update: (id, dto) => api.put(`/users/${id}`, dto),
+}
+
+export const leaveApi = {
+  mine: () => api.get('/leave/mine'),
+  submit: (dto) => api.post('/leave', dto),
+  cancel: (id) => api.del(`/leave/${id}`),
+  all: (status) => api.get(`/leave/all${status ? `?status=${status}` : ''}`),
+  approve: (id, dto) => api.put(`/leave/${id}/approve`, dto),
+}
+
+export const workEventApi = {
+  byMonth: (year, month) => api.get(`/work-events?year=${year}&month=${month}`),
+  create: (dto) => api.post('/work-events', dto),
+  remove: (id) => api.del(`/work-events/${id}`),
 }
