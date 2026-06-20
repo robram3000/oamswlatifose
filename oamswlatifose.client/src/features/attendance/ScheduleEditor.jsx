@@ -9,7 +9,7 @@ function empName(e) {
 
 // Admin/Manager panel to set "the schedule time" an employee's attendance is graded against.
 // `schedulesByEmp` (employeeId -> WorkScheduleDTO) is used to prefill when an employee is picked.
-export default function ScheduleEditor({ schedulesByEmp = {}, onSaved, prefillEmployeeId }) {
+export default function ScheduleEditor({ schedulesByEmp = {}, onSaved, prefillEmployeeId, hideTitle = false }) {
   const [employees, setEmployees] = useState([])
   const [employeeId, setEmployeeId] = useState('')
   const [start, setStart] = useState('08:00')
@@ -76,7 +76,7 @@ export default function ScheduleEditor({ schedulesByEmp = {}, onSaved, prefillEm
 
   return (
     <div className="panel">
-      <h3 className="panel__title">Set work schedule</h3>
+      {!hideTitle && <h3 className="panel__title">Set work schedule</h3>}
 
       {notice && (
         <p className={`alert ${notice.type === 'ok' ? 'alert--ok' : 'alert--error'}`} style={{ marginBottom: 14 }}>

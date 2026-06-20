@@ -48,8 +48,8 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [teamLoading, setTeamLoading] = useState(false)
   const [schedulesByEmp, setSchedulesByEmp] = useState({})
   const [editSchedEmpId, setEditSchedEmpId] = useState(null)
+  const [showSchedModal, setShowSchedModal] = useState(false)
   const [viewSched, setViewSched] = useState(null)
-  const schedEditorRef = useRef(null)
 
   const range = RANGES.find((r) => r.key === rangeKey) || RANGES[2]
 
@@ -162,8 +162,10 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   const handleEditSchedule = (row) => {
     setEditSchedEmpId(row.employeeId)
-    setTimeout(() => schedEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    setShowSchedModal(true)
   }
+
+  const closeSchedModal = () => { setShowSchedModal(false); setEditSchedEmpId(null) }
 
   const handleDeleteSchedule = async (row) => {
     if (!window.confirm(`Delete schedule for ${row.employeeName}?`)) return
@@ -174,11 +176,11 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   // ── Primary action button (varies by clock state) ─────────────────
   const ActionButton = ({ inHeader }) => {
-    // Already marked as time off today
-    if (isTimeOff) {
+    // Already marked as time off today (employees only)
+    if (isTimeOff && !isManager) {
       return <button className="btnGhost" disabled>{Icons.umbrella} Time Off</button>
     }
-    // Not clocked in yet — show Time In + Time Off side by side
+    // Not clocked in yet
     if (!hasTimeIn) {
       const busy = acting || locating
       return (
@@ -187,9 +189,12 @@ export default function AttendanceConsole({ user, onSignOut }) {
             {busy ? <span className="spinner" /> : Icons.clock}
             {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
           </button>
-          <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
-            {Icons.umbrella} Time Off
-          </button>
+          {/* Time Off is an employee-only action; admins manipulate records directly */}
+          {!isManager && (
+            <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
+              {Icons.umbrella} Time Off
+            </button>
+          )}
         </div>
       )
     }
@@ -406,19 +411,14 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
               {isManager ? (
                 <>
-                  <div ref={schedEditorRef}>
-                    <ScheduleEditor
-                      schedulesByEmp={schedulesByEmp}
-                      onSaved={() => { loadTeam(teamDate); loadMine(); setEditSchedEmpId(null) }}
-                      prefillEmployeeId={editSchedEmpId}
-                    />
-                  </div>
-
                   <div className="topRow" style={{ marginTop: 8 }}>
                     <div>
                       <h1 className="pageTitle" style={{ fontSize: 18 }}>All schedules</h1>
                       <p className="pageSub">Every employee’s active work schedule.</p>
                     </div>
+                    <button className="btnPrimary" onClick={() => { setEditSchedEmpId(null); setShowSchedModal(true) }}>
+                      + Set schedule
+                    </button>
                   </div>
                   <MonitoringTable
                     loading={teamLoading}
@@ -460,6 +460,23 @@ export default function AttendanceConsole({ user, onSignOut }) {
           onResend={requestOtp}
           onClose={() => setOtpInfo(null)}
         />
+      )}
+
+      {showSchedModal && (
+        <div className="modalOverlay" onClick={closeSchedModal}>
+          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title" style={{ margin: 0 }}>Set work schedule</h3>
+              <button className="iconBtn" onClick={closeSchedModal}>{Icons.close}</button>
+            </div>
+            <ScheduleEditor
+              schedulesByEmp={schedulesByEmp}
+              onSaved={() => { loadTeam(teamDate); loadMine(); closeSchedModal() }}
+              prefillEmployeeId={editSchedEmpId}
+              hideTitle
+            />
+          </div>
+        </div>
       )}
 
       {viewSched && (
