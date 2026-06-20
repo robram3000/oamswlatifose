@@ -53,7 +53,7 @@ body {
 button { font-family: inherit; }
 
 /* ── App shell ───────────────────────────────────────────── */
-.shell { display: flex; min-height: 100%; }
+.shell { display: flex; min-height: 100%; overflow-x: hidden; }
 
 .sidebar {
   width: 240px;
@@ -246,6 +246,46 @@ button { font-family: inherit; }
 .alert--error { background: rgba(242,139,130,.12); color: var(--gcp-red); border: 1px solid rgba(242,139,130,.3); }
 .alert--ok { background: rgba(129,201,149,.12); color: var(--gcp-green); border: 1px solid rgba(129,201,149,.3); }
 .alert--info { background: rgba(138,180,248,.1); color: var(--gcp-blue); border: 1px solid rgba(138,180,248,.25); }
+
+/* ── Mobile responsive ───────────────────────────────────── */
+.menuBtn { display: none; }
+
+@media (max-width: 768px) {
+  /* Sidebar becomes a slide-in drawer */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    transform: translateX(-100%);
+    transition: transform .25s cubic-bezier(.4, 0, .2, 1);
+    z-index: 100;
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar--open { transform: translateX(0); }
+
+  /* Dark overlay behind drawer */
+  .sidebarOverlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, .55);
+    z-index: 99;
+    animation: fadeOverlay .2s ease;
+  }
+  @keyframes fadeOverlay { from { opacity: 0 } to { opacity: 1 } }
+
+  /* Show hamburger button */
+  .menuBtn { display: inline-flex; }
+
+  /* Topbar: tighten and hide decorative text */
+  .topbar { padding: 0 10px; gap: 8px; }
+  .topbar__title { display: none; }
+  .topbar__userName { display: none; }
+
+  /* Page: tighter padding on mobile */
+  .page { padding: 12px; gap: 10px; }
+
+  /* Inputs: full-width on mobile so fieldRow wraps cleanly */
+  .input, .select { min-width: 0; width: 100%; }
+  .fieldRow { flex-direction: column; }
+}
 
 /* ── Login ───────────────────────────────────────────────── */
 .loginWrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; }

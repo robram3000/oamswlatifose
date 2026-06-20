@@ -26,6 +26,7 @@ const isAbsent = (s) => /absent/i.test(s || '')
 export default function AttendanceConsole({ user, onSignOut }) {
   const isManager = auth.isManager
   const [view, setView] = useState('monitoring') // monitoring | attendance | schedule
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const [today, setToday] = useState(null)
   const [schedule, setSchedule] = useState(null)
@@ -195,7 +196,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
   }
 
   const navItem = (key, icon, label) => (
-    <button className={`navItem ${view === key ? 'navItem--active' : ''}`} onClick={() => setView(key)}>
+    <button className={`navItem ${view === key ? 'navItem--active' : ''}`} onClick={() => { setView(key); setSidebarOpen(false) }}>
       {icon} {label}
     </button>
   )
@@ -204,8 +205,11 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   return (
     <div className="shell">
+      {/* Sidebar overlay (mobile only) */}
+      {sidebarOpen && <div className="sidebarOverlay" onClick={() => setSidebarOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar__brand">
           <img src="/logo.svg" alt="AGLIPAY" className="brandLogo" />
           <div className="brandText">
@@ -222,10 +226,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
       {/* Main */}
       <div className="main">
         <header className="topbar">
+          <button className="iconBtn menuBtn" onClick={() => setSidebarOpen(o => !o)} title="Menu">
+            {sidebarOpen ? Icons.close : Icons.menu}
+          </button>
           <span className="topbar__title">AGLIPAY · Attendance monitoring</span>
           <div className="topbar__spacer" />
           <div className="topbar__user">
-            <span>{user?.employeeName || user?.username}{user?.roleName ? ` · ${user.roleName}` : ''}</span>
+            <span className="topbar__userName">{user?.employeeName || user?.username}{user?.roleName ? ` · ${user.roleName}` : ''}</span>
             <span className="avatar">{initials}</span>
             <button className="iconBtn" title="Sign out" onClick={onSignOut}>{Icons.logout}</button>
           </div>
