@@ -865,10 +865,15 @@ namespace oamswlatifose.Server.Services.Email.Implementation
             if (!await CheckRateLimitAsync(to))
                 return ServiceResponse<EmailSendResultDTO>.FailureResult("Rate limit exceeded for this recipient. Please try again later.");
 
-            // Use the Resend HTTP API when a key is configured (required on Railway, which blocks SMTP).
-            // Falls back to direct SMTP for local/dev environments where no key is set.
+            // Prefer Resend when a key is configured (required on Railway which blocks SMTP).
+            // Fall back to SMTP on any Resend failure (e.g. unverified domain / sandbox restriction).
             if (!string.IsNullOrWhiteSpace(_settings.ResendApiKey))
-                return await SendViaResendAsync(to, subject, body, isHtml);
+            {
+                var resendResult = await SendViaResendAsync(to, subject, body, isHtml);
+                if (resendResult.IsSuccess) return resendResult;
+
+                _logger.LogWarning("Resend failed ({Msg}); falling back to SMTP", resendResult.Message);
+            }
 
             return await SendViaSmtpAsync(to, subject, body, isHtml, attachments);
         }
