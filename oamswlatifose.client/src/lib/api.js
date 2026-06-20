@@ -94,6 +94,7 @@ export const scheduleApi = {
   mine: () => api.get('/schedule/my'),
   all: () => api.get('/schedule'),
   set: (dto) => api.post('/schedule', dto),
+  remove: (employeeId) => api.del(`/schedule/employee/${employeeId}`),
 }
 
 export const attendanceApi = {

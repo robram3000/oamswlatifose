@@ -59,6 +59,20 @@ namespace oamswlatifose.Server.Controllers
             return Ok(result);
         }
 
+        /// <summary>Removes (deactivates) a specific employee's schedule (Admin/Manager).</summary>
+        [HttpDelete("employee/{employeeId:int}")]
+        [PermissionAuthorize("edit_attendance")]
+        [ProducesResponseType(typeof(ServiceResponse<bool>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> Delete(int employeeId)
+        {
+            var result = await _scheduleService.DeleteAsync(employeeId);
+            if (!result.IsSuccess)
+                return BadRequest(result);
+            _logger.LogInformation("Schedule deleted for employee {EmployeeId} by user {UserId}",
+                employeeId, GetCurrentUserId());
+            return Ok(result);
+        }
+
         /// <summary>Creates or updates an employee's schedule (Admin/Manager).</summary>
         [HttpPost]
         [PermissionAuthorize("edit_attendance")]

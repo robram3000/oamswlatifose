@@ -9,7 +9,7 @@ function empName(e) {
 
 // Admin/Manager panel to set "the schedule time" an employee's attendance is graded against.
 // `schedulesByEmp` (employeeId -> WorkScheduleDTO) is used to prefill when an employee is picked.
-export default function ScheduleEditor({ schedulesByEmp = {}, onSaved }) {
+export default function ScheduleEditor({ schedulesByEmp = {}, onSaved, prefillEmployeeId }) {
   const [employees, setEmployees] = useState([])
   const [employeeId, setEmployeeId] = useState('')
   const [start, setStart] = useState('08:00')
@@ -28,6 +28,11 @@ export default function ScheduleEditor({ schedulesByEmp = {}, onSaved }) {
     })
     return () => { alive = false }
   }, [])
+
+  // When parent requests an employee to edit, sync the selection.
+  useEffect(() => {
+    if (prefillEmployeeId) setEmployeeId(String(prefillEmployeeId))
+  }, [prefillEmployeeId])
 
   // Prefill from the existing schedule when an employee is selected.
   useEffect(() => {

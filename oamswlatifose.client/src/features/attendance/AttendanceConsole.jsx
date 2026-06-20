@@ -47,6 +47,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [teamRows, setTeamRows] = useState([])
   const [teamLoading, setTeamLoading] = useState(false)
   const [schedulesByEmp, setSchedulesByEmp] = useState({})
+  const [editSchedEmpId, setEditSchedEmpId] = useState(null)
+  const [viewSched, setViewSched] = useState(null)
+  const schedEditorRef = useRef(null)
 
   const range = RANGES.find((r) => r.key === rangeKey) || RANGES[2]
 
@@ -156,6 +159,18 @@ export default function AttendanceConsole({ user, onSignOut }) {
   }
 
   const refresh = () => { loadMine(); if (isManager) loadTeam(teamDate) }
+
+  const handleEditSchedule = (row) => {
+    setEditSchedEmpId(row.employeeId)
+    setTimeout(() => schedEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+  }
+
+  const handleDeleteSchedule = async (row) => {
+    if (!window.confirm(`Delete schedule for ${row.employeeName}?`)) return
+    const res = await scheduleApi.remove(row.employeeId)
+    setNotice({ type: res.isSuccess ? 'ok' : 'error', text: res.message || (res.isSuccess ? 'Schedule deleted.' : 'Delete failed.') })
+    if (res.isSuccess) loadTeam(teamDate)
+  }
 
   // ── Primary action button (varies by clock state) ─────────────────
   const ActionButton = ({ inHeader }) => {
@@ -391,10 +406,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
               {isManager ? (
                 <>
-                  <ScheduleEditor
-                    schedulesByEmp={schedulesByEmp}
-                    onSaved={() => { loadTeam(teamDate); loadMine() }}
-                  />
+                  <div ref={schedEditorRef}>
+                    <ScheduleEditor
+                      schedulesByEmp={schedulesByEmp}
+                      onSaved={() => { loadTeam(teamDate); loadMine(); setEditSchedEmpId(null) }}
+                      prefillEmployeeId={editSchedEmpId}
+                    />
+                  </div>
 
                   <div className="topRow" style={{ marginTop: 8 }}>
                     <div>
@@ -414,6 +432,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
                       { key: 'lateAfter', label: 'Late after', hideSm: true },
                       { key: 'graceMinutes', label: 'Grace (min)', num: true, hideSm: true },
                       { key: 'workDays', label: 'Work days', hideSm: true },
+                      { key: '_actions', label: '', render: (r) => (
+                        <div className="actionBtns">
+                          <button className="btnSm" onClick={() => setViewSched(r)}>View</button>
+                          <button className="btnSm" onClick={() => handleEditSchedule(r)}>Edit</button>
+                          <button className="btnSm btnSm--danger" onClick={() => handleDeleteSchedule(r)}>Delete</button>
+                        </div>
+                      ) },
                     ]}
                   />
                 </>
@@ -435,6 +460,24 @@ export default function AttendanceConsole({ user, onSignOut }) {
           onResend={requestOtp}
           onClose={() => setOtpInfo(null)}
         />
+      )}
+
+      {viewSched && (
+        <div className="modalOverlay" onClick={() => setViewSched(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal__title">{viewSched.employeeName}</h3>
+            <p className="modal__sub">Work schedule details</p>
+            <div className="kv"><span className="kv__k">Start time</span><span className="kv__v">{viewSched.startTime}</span></div>
+            <div className="kv"><span className="kv__k">End time</span><span className="kv__v">{viewSched.endTime}</span></div>
+            <div className="kv"><span className="kv__k">Late after</span><span className="kv__v">{viewSched.lateAfter}</span></div>
+            <div className="kv"><span className="kv__k">Grace period</span><span className="kv__v">{viewSched.graceMinutes} min</span></div>
+            <div className="kv"><span className="kv__k">Work days</span><span className="kv__v">{viewSched.workDays}</span></div>
+            <div className="modal__actions">
+              <button className="btnGhost" onClick={() => setViewSched(null)}>Close</button>
+              <button className="btnPrimary" onClick={() => { handleEditSchedule(viewSched); setViewSched(null) }}>Edit</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

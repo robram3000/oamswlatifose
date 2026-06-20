@@ -52,7 +52,7 @@ namespace oamswlatifose.Server.Services.Email.Implementation
             public int MaxEmailsPerMinute { get; set; } = 30;
             public int MaxEmailsPerHour { get; set; } = 500;
             public int MaxEmailsPerDay { get; set; } = 5000;
-            public int RateLimitPerRecipient { get; set; } = 5;
+            public int RateLimitPerRecipient { get; set; } = 20;
             public string BaseUrl { get; set; }
             public string TrackingPixelUrl { get; set; }
             public string UnsubscribeUrl { get; set; }

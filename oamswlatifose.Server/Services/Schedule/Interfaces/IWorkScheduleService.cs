@@ -18,6 +18,9 @@ namespace oamswlatifose.Server.Services.Schedule.Interfaces
         /// <summary>Creates or updates (upserts) the schedule for an employee.</summary>
         Task<ServiceResponse<WorkScheduleDTO>> SetAsync(SetWorkScheduleDTO dto);
 
+        /// <summary>Soft-deletes (deactivates) a schedule for an employee.</summary>
+        Task<ServiceResponse<bool>> DeleteAsync(int employeeId);
+
         /// <summary>The raw active schedule entity (or null) — used by the clock-in verifier.</summary>
         Task<EMWorkSchedule> GetEntityAsync(int employeeId);
 

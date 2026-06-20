@@ -120,6 +120,28 @@ namespace oamswlatifose.Server.Services.Schedule.Implementation
             }
         }
 
+        public async Task<ServiceResponse<bool>> DeleteAsync(int employeeId)
+        {
+            try
+            {
+                var schedule = await _db.EMWorkSchedules
+                    .FirstOrDefaultAsync(s => s.EmployeeId == employeeId && s.IsActive);
+                if (schedule == null)
+                    return ServiceResponse<bool>.FailureResult("No active schedule found for this employee");
+
+                schedule.IsActive = false;
+                schedule.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Schedule deactivated for employee {EmployeeId}", employeeId);
+                return ServiceResponse<bool>.SuccessResult(true, "Schedule deleted");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting schedule for employee {EmployeeId}", employeeId);
+                return ServiceResponse<bool>.FromException(ex, "Failed to delete schedule");
+            }
+        }
+
         public async Task<EMWorkSchedule> GetEntityAsync(int employeeId)
         {
             return await _db.EMWorkSchedules
