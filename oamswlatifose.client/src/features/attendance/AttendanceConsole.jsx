@@ -261,8 +261,8 @@ export default function AttendanceConsole({ user, onSignOut }) {
   )
 
   const VIEWS = {
-    monitoring: { title: isManager ? 'Dashboard' : 'Attendance monitoring', sub: isManager ? 'Today's attendance overview.' : 'Clock in against your schedule — verified by an emailed one-time code.' },
-    attendance: { title: isManager ? 'All attendance' : 'My attendance', sub: isManager ? 'Every employee's attendance records.' : 'Your attendance history, location and on-time rate.' },
+    monitoring: { title: isManager ? 'Dashboard' : 'Attendance monitoring', sub: isManager ? "Today's attendance overview." : 'Clock in against your schedule — verified by an emailed one-time code.' },
+    attendance: { title: isManager ? 'All attendance' : 'My attendance', sub: isManager ? "Every employee's attendance records." : 'Your attendance history, location and on-time rate.' },
     schedule: { title: 'Schedule', sub: isManager ? 'Set work schedules per employee.' : 'Your assigned work schedule.' },
     users: { title: 'Users', sub: 'Create employee accounts and assign their role.' },
   }
