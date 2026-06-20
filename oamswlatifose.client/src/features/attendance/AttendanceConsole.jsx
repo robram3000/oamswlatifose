@@ -313,13 +313,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
                           {r.employeeName}
                         </>
                       ) },
-                      { key: 'department', label: 'Department' },
-                      { key: 'scheduled', label: 'Schedule' },
-                      { key: 'timeInFormatted', label: 'Time In', render: (r) => r.timeInFormatted || <span className="muted">—</span> },
-                      { key: 'timeOutFormatted', label: 'Time Out', render: (r) => r.timeOutFormatted || <span className="muted">—</span> },
+                      { key: 'department', label: 'Dept', hideSm: true },
+                      { key: 'scheduled', label: 'Schedule', hideSm: true },
+                      { key: 'timeInFormatted', label: 'In', render: (r) => r.timeInFormatted || <span className="muted">—</span> },
+                      { key: 'timeOutFormatted', label: 'Out', render: (r) => r.timeOutFormatted || <span className="muted">—</span> },
                       { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
-                      { key: 'workLocation', label: 'Location', render: (r) => locationBadge(r.workLocation) },
-                      { key: 'hoursWorkedFormatted', label: 'Hours', num: true, render: (r) => r.hoursWorkedFormatted || <span className="muted">—</span> },
+                      { key: 'workLocation', label: 'Location', hideSm: true, render: (r) => locationBadge(r.workLocation) },
+                      { key: 'hoursWorkedFormatted', label: 'Hrs', num: true, render: (r) => r.hoursWorkedFormatted || <span className="muted">—</span> },
                     ]}
                   />
 
@@ -354,11 +354,11 @@ export default function AttendanceConsole({ user, onSignOut }) {
                 rows={filtered}
                 columns={[
                   { key: 'date', label: 'Date' },
-                  { key: 'timeIn', label: 'Time In' },
-                  { key: 'timeOut', label: 'Time Out' },
+                  { key: 'timeIn', label: 'In' },
+                  { key: 'timeOut', label: 'Out' },
                   { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
-                  { key: 'workLocation', label: 'Location', render: (r) => locationBadge(r.workLocation) },
-                  { key: 'hoursWorked', label: 'Hours', num: true },
+                  { key: 'workLocation', label: 'Location', hideSm: true, render: (r) => locationBadge(r.workLocation) },
+                  { key: 'hoursWorked', label: 'Hrs', num: true },
                 ]}
               />
             </>
@@ -391,9 +391,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
                       { key: 'employeeName', label: 'Employee' },
                       { key: 'startTime', label: 'Start' },
                       { key: 'endTime', label: 'End' },
-                      { key: 'lateAfter', label: 'Late after' },
-                      { key: 'graceMinutes', label: 'Grace (min)', num: true },
-                      { key: 'workDays', label: 'Work days' },
+                      { key: 'lateAfter', label: 'Late after', hideSm: true },
+                      { key: 'graceMinutes', label: 'Grace (min)', num: true, hideSm: true },
+                      { key: 'workDays', label: 'Work days', hideSm: true },
                     ]}
                   />
                 </>

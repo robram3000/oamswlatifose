@@ -120,10 +120,10 @@ export default function UserManager() {
         columns={[
           { key: 'username', label: 'Username' },
           { key: 'employeeName', label: 'Name' },
-          { key: 'email', label: 'Email' },
+          { key: 'email', label: 'Email', hideSm: true },
           { key: 'roleName', label: 'Role' },
-          { key: 'department', label: 'Department' },
-          { key: 'isActive', label: 'Active', render: (r) => (r.isActive ? 'Yes' : 'No') },
+          { key: 'department', label: 'Dept', hideSm: true },
+          { key: 'isActive', label: 'Active', hideSm: true, render: (r) => (r.isActive ? 'Yes' : 'No') },
         ]}
       />
     </>

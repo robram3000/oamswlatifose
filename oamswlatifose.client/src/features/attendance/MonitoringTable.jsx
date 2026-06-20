@@ -31,7 +31,7 @@ export default function MonitoringTable({ columns, rows, loading, emptyText, fil
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.key} className={`th ${c.num ? 'thNum' : ''}`}>{c.label}</th>
+                <th key={c.key} className={`th${c.num ? ' thNum' : ''}${c.hideSm ? ' col-hide-sm' : ''}`}>{c.label}</th>
               ))}
             </tr>
           </thead>
@@ -44,7 +44,7 @@ export default function MonitoringTable({ columns, rows, loading, emptyText, fil
               visible.map((row, i) => (
                 <tr key={row.id ?? i} className="row">
                   {columns.map((c) => (
-                    <td key={c.key} className={`td ${c.num ? 'tdNum' : ''}`}>
+                    <td key={c.key} className={`td${c.num ? ' tdNum' : ''}${c.hideSm ? ' col-hide-sm' : ''}`}>
                       {c.render ? c.render(row) : (row[c.key] ?? <span className="muted">—</span>)}
                     </td>
                   ))}
