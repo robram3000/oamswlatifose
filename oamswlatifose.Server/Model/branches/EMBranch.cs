@@ -18,11 +18,11 @@ namespace oamswlatifose.Server.Model.branches
 
         [Required]
         [MaxLength(150)]
-        [Column(TypeName = "nvarchar(150)")]
+
         public string Name { get; set; }
 
         [MaxLength(250)]
-        [Column(TypeName = "nvarchar(250)")]
+
         public string? Address { get; set; }
 
         [Required]

@@ -37,7 +37,7 @@ namespace oamswlatifose.Server.Model.occurance
 
         /// <summary>Comma-separated working days, e.g. "Mon,Tue,Wed,Thu,Fri".</summary>
         [MaxLength(50)]
-        [Column(TypeName = "nvarchar(50)")]
+
         public string WorkDays { get; set; } = "Mon,Tue,Wed,Thu,Fri";
 
         public bool IsActive { get; set; } = true;

@@ -23,18 +23,18 @@ namespace oamswlatifose.Server.Model.occurance
 
         [Required]
         [MaxLength(255)]
-        [Column(TypeName = "nvarchar(255)")]
+
         public string Email { get; set; }
 
         [Required]
         [MaxLength(10)]
-        [Column(TypeName = "nvarchar(10)")]
+
         public string Code { get; set; }
 
         /// <summary>"ClockIn" or "ClockOut".</summary>
         [Required]
         [MaxLength(20)]
-        [Column(TypeName = "nvarchar(20)")]
+
         public string Purpose { get; set; }
 
         /// <summary>The time-of-day the action was initiated (the value recorded on success).</summary>
@@ -46,7 +46,7 @@ namespace oamswlatifose.Server.Model.occurance
         public double? Longitude { get; set; }
 
         [MaxLength(20)]
-        [Column(TypeName = "nvarchar(20)")]
+
         public string? WorkLocation { get; set; }
 
         public int? BranchId { get; set; }
