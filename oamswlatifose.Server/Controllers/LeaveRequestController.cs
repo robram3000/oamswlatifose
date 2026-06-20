@@ -65,6 +65,7 @@ namespace oamswlatifose.Server.Controllers
                 LeaveType = dto.LeaveType,
                 Reason = dto.Reason ?? "",
                 Status = "Pending",
+                ApprovalNote = "",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
             };
@@ -126,7 +127,7 @@ namespace oamswlatifose.Server.Controllers
 
             leave.Status = dto.IsApproved ? "Approved" : "Rejected";
             leave.ApprovedByUserId = GetCurrentUserId();
-            leave.ApprovalNote = dto.Note ?? "";
+            leave.ApprovalNote = dto.Note?.Trim() ?? "";
             leave.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();

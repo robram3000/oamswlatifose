@@ -116,6 +116,7 @@ export const attendanceApi = {
   byDate: (date) => api.get(`/attendance/admin/by-date/${date}`),
   employees: () => api.get('/employees?pageNumber=1&pageSize=200'),
   myCalendar: (year, month) => api.get(`/attendance/my-calendar?year=${year}&month=${month}`),
+  bulkImport: (records) => api.post('/attendance/admin/bulk-import', records),
 }
 
 export const branchApi = {

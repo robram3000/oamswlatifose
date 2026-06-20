@@ -229,6 +229,7 @@ button { font-family: inherit; }
 .filterIcon { color: var(--text-muted); flex-shrink: 0; }
 .filterInput { flex: 1; border: none; outline: none; background: transparent; color: var(--text-primary); font-size: 13px; }
 .filterInput::placeholder { color: var(--text-secondary); }
+.exportBtns { display: flex; gap: 4px; flex-shrink: 0; }
 
 .tableScroll { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { attendanceApi, scheduleApi, auth, workEventApi } from '../../lib/api'
+import { attendanceApi, scheduleApi, auth, workEventApi, leaveApi } from '../../lib/api'
+import { parseCsvImport, downloadImportTemplate } from '../../lib/export'
 import { getCurrentLocation } from '../../lib/geo'
 import { Icons, Sparkline, statusColor, statusBadge, locationBadge } from '../../lib/ui'
 import MonitoringTable from './MonitoringTable'
@@ -47,6 +48,8 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [notice, setNotice] = useState(null)
   const [acting, setActing] = useState(false)
   const [locating, setLocating] = useState(false)
+  const [isOnLeave, setIsOnLeave] = useState(false)
+  const [todayLeave, setTodayLeave] = useState(null) // the active EMLeaveRequest covering today
 
   // OTP modal
   const [otpInfo, setOtpInfo] = useState(null)
@@ -67,6 +70,14 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [adminAttLoading, setAdminAttLoading] = useState(false)
   const [adminRangeKey, setAdminRangeKey] = useState('7d')
 
+  // Import state (Admin only)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importNotice, setImportNotice] = useState(null)
+
+  // Work event banner — shows upcoming events for next 14 days
+  const [bannerEvents, setBannerEvents] = useState([])
+  const [bannerOpen, setBannerOpen] = useState(false)
+
   // Dashboard trend (7-day history grouped by date)
   const [dashTrend, setDashTrend] = useState([])
   const [dashTrendLoading, setDashTrendLoading] = useState(false)
@@ -76,14 +87,29 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   const loadMine = useCallback(async () => {
     setLoading(true)
-    const [t, h, s] = await Promise.all([
+    const [t, h, s, lv] = await Promise.all([
       attendanceApi.today(),
       attendanceApi.history(1, 100),
       scheduleApi.mine(),
+      leaveApi.mine(),
     ])
     setToday(t.isSuccess ? t.data : null)
     setHistory(h.isSuccess ? (h.data?.items ?? []) : [])
     setSchedule(s.isSuccess ? s.data : null)
+
+    // Check if today falls within any approved leave date range
+    const todayISO = localDateStr()
+    if (lv.isSuccess && Array.isArray(lv.data)) {
+      const active = lv.data.find(
+        (l) => l.status === 'Approved' && todayISO >= l.startDate && todayISO <= l.endDate,
+      )
+      setIsOnLeave(!!active)
+      setTodayLeave(active || null)
+    } else {
+      setIsOnLeave(false)
+      setTodayLeave(null)
+    }
+
     setLoading(false)
   }, [])
 
@@ -123,6 +149,61 @@ export default function AttendanceConsole({ user, onSignOut }) {
     setDashTrend(Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)))
     setDashTrendLoading(false)
   }, [isManager])
+
+  // Load upcoming work events for the banner
+  useEffect(() => {
+    const load = async () => {
+      const now = new Date()
+      const y = now.getFullYear()
+      const m = now.getMonth() + 1
+      const todayS = localDateStr(now)
+      const limitDate = new Date(now)
+      limitDate.setDate(limitDate.getDate() + 14)
+      const limitS = localDateStr(limitDate)
+
+      const res1 = await workEventApi.byMonth(y, m)
+      let all = res1.isSuccess ? (res1.data ?? []) : []
+
+      // If today is in the last ~14 days of the month, also load next month
+      if (now.getDate() > 17) {
+        const nm = m === 12 ? 1 : m + 1
+        const ny = m === 12 ? y + 1 : y
+        const res2 = await workEventApi.byMonth(ny, nm)
+        if (res2.isSuccess && res2.data) all = [...all, ...res2.data]
+      }
+
+      const upcoming = all
+        .filter((e) => e.date >= todayS && e.date <= limitS)
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      setBannerEvents(upcoming)
+      if (upcoming.length > 0) setBannerOpen(true)
+    }
+    load()
+  }, [])
+
+  const handleImport = useCallback(async (file) => {
+    if (!file) return
+    setImportLoading(true)
+    setImportNotice(null)
+    const text = await file.text()
+    const records = parseCsvImport(text)
+    if (!records.length) {
+      setImportNotice({ type: 'error', text: 'No valid records found. Check EmployeeId and Date columns match the template.' })
+      setImportLoading(false)
+      return
+    }
+    const res = await attendanceApi.bulkImport(records)
+    setImportLoading(false)
+    if (res.isSuccess) {
+      const d = res.data
+      const msg = `Imported ${d?.successCount ?? records.length} of ${d?.totalRecords ?? records.length} records${d?.failCount ? ` (${d.failCount} failed)` : ''}.`
+      setImportNotice({ type: 'ok', text: msg })
+      loadAdminAtt(adminRange.days)
+    } else {
+      setImportNotice({ type: 'error', text: res.message || 'Import failed.' })
+    }
+  }, [loadAdminAtt, adminRange.days])
 
   useEffect(() => { loadMine() }, [loadMine])
   useEffect(() => { if (isManager) loadTeam(teamDate) }, [isManager, teamDate, loadTeam])
@@ -270,6 +351,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
     if (isTimeOff) {
       return <button className="btnGhost" disabled>{Icons.umbrella} Time Off</button>
     }
+    // On approved leave and not yet clocked in → block Time In and Time Off
+    if (isOnLeave && !hasTimeIn) {
+      const tip = todayLeave
+        ? `${todayLeave.leaveType} leave · ${todayLeave.startDate} – ${todayLeave.endDate}`
+        : undefined
+      return (
+        <button className="btnGhost" disabled title={tip}>
+          {Icons.leave} On Approved Leave
+        </button>
+      )
+    }
     if (!hasTimeIn) {
       const busy = acting || locating
       const endLabel = schedule?.endTime ? schedule.endTime.slice(0, 5) : null
@@ -390,6 +482,10 @@ export default function AttendanceConsole({ user, onSignOut }) {
             </p>
           )}
 
+          {bannerOpen && bannerEvents.length > 0 && (
+            <WorkEventBanner events={bannerEvents} onDismiss={() => setBannerOpen(false)} />
+          )}
+
           {/* ===================== MONITORING / DASHBOARD ===================== */}
           {view === 'monitoring' && (
             <>
@@ -428,6 +524,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
                     loading={teamLoading}
                     emptyText="No attendance recorded for this date."
                     filterKeys={['employeeName', 'department', 'status']}
+                    exportOptions={{ filename: `team_attendance_${teamDate}`, title: `Team Attendance · ${teamDate}` }}
                     rows={teamRows.map((r) => ({
                       ...r,
                       scheduled: schedulesByEmp[r.employeeId]
@@ -457,7 +554,11 @@ export default function AttendanceConsole({ user, onSignOut }) {
                         <div>
                           <h3 className="panel__title" style={{ margin: 0 }}>My attendance today</h3>
                           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-                            {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? `Done · In ${today?.timeInFormatted} · Out ${today?.timeOutFormatted}` : `Clocked in at ${today?.timeInFormatted}`}
+                            {isTimeOff ? 'Time Off'
+                              : isOnLeave && !hasTimeIn ? `On Approved Leave${todayLeave ? ` · ${todayLeave.leaveType}` : ''}`
+                              : !hasTimeIn ? 'Not clocked in'
+                              : hasTimeOut ? `Done · In ${today?.timeInFormatted} · Out ${today?.timeOutFormatted}`
+                              : `Clocked in at ${today?.timeInFormatted}`}
                           </div>
                         </div>
                         <div className="actions"><ActionButton /></div>
@@ -472,13 +573,19 @@ export default function AttendanceConsole({ user, onSignOut }) {
                     <div className="panel">
                       <h3 className="panel__title">Today · {localDateStr()}</h3>
                       <div className="statusBig">
-                        <span className="statusBig__dot" style={{ background: hasTimeIn ? statusColor(today?.status) : 'var(--text-disabled)' }} />
+                        <span className="statusBig__dot" style={{ background: isOnLeave && !hasTimeIn ? 'var(--gcp-blue)' : hasTimeIn ? statusColor(today?.status) : 'var(--text-disabled)' }} />
                         <div>
                           <div className="statusBig__label">
-                            {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? 'Completed' : (today?.status || 'Clocked in')}
+                            {isTimeOff ? 'Time Off'
+                              : isOnLeave && !hasTimeIn ? 'On Approved Leave'
+                              : !hasTimeIn ? 'Not clocked in'
+                              : hasTimeOut ? 'Completed'
+                              : (today?.status || 'Clocked in')}
                           </div>
                           <div className="statusBig__sub">
-                            {hasTimeIn
+                            {isOnLeave && !hasTimeIn && todayLeave
+                              ? `${todayLeave.leaveType} leave · ${todayLeave.startDate} – ${todayLeave.endDate}${todayLeave.reason ? ` · ${todayLeave.reason}` : ''}`
+                              : hasTimeIn
                               ? `In at ${today?.timeInFormatted || '—'}${hasTimeOut ? ` · Out at ${today?.timeOutFormatted}` : ''}${today?.workLocation ? ` · ${today.workLocation}` : ''}`
                               : schedule ? `Scheduled ${schedule.startTime} — late after ${schedule.lateAfter}` : 'No schedule set'}
                           </div>
@@ -505,11 +612,24 @@ export default function AttendanceConsole({ user, onSignOut }) {
                         {adminRangeKey === r.key && '✓ '}{r.label}
                       </button>
                     ))}
+                    <div style={{ flex: 1 }} />
+                    <label className="chip" style={{ cursor: 'pointer' }} title="Import attendance from CSV file">
+                      {importLoading ? 'Importing…' : '↑ Import CSV'}
+                      <input type="file" accept=".csv,.CSV" hidden disabled={importLoading}
+                        onChange={(e) => { handleImport(e.target.files[0]); e.target.value = '' }} />
+                    </label>
+                    <button className="chip" onClick={downloadImportTemplate} title="Download CSV import template">Template</button>
                   </div>
+                  {importNotice && (
+                    <p className={`alert alert--${importNotice.type === 'ok' ? 'ok' : 'error'}`} style={{ margin: '8px 0' }}>
+                      {importNotice.text}
+                    </p>
+                  )}
                   <MonitoringTable
                     loading={adminAttLoading}
                     emptyText="No attendance records in this range."
                     filterKeys={['employeeName', 'department', 'status', 'date']}
+                    exportOptions={{ filename: `attendance_${adminRange.label.replace(' ', '_')}`, title: `All Attendance · ${adminRange.label}` }}
                     rows={Array.isArray(adminAttRows) ? adminAttRows : []}
                     columns={[
                       { key: 'employeeName', label: 'Employee' },
@@ -543,6 +663,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
                     loading={loading}
                     emptyText="No attendance records in this range yet."
                     filterKeys={['date', 'status']}
+                    exportOptions={{ filename: `my_attendance_${range.label.replace(' ', '_')}`, title: `My Attendance · ${range.label}` }}
                     rows={filtered}
                     columns={[
                       { key: 'date', label: 'Date' },
@@ -799,12 +920,71 @@ function TrendBar({ data, loading }) {
   )
 }
 
-const EVENT_TYPES = ['Holiday', 'DayOff', 'Closed']
-const EVENT_COLORS = {
-  Holiday: '#9334e6',
-  DayOff: 'var(--text-muted)',
-  Closed: 'var(--gcp-red)',
+const WE_CHIP = {
+  Holiday: { color: '#9334e6', bg: 'rgba(147,52,230,.12)' },
+  DayOff:  { color: 'var(--text-muted)', bg: 'rgba(120,120,120,.10)' },
+  Closed:  { color: 'var(--gcp-red)', bg: 'rgba(234,67,53,.12)' },
 }
+
+function WorkEventBanner({ events, onDismiss }) {
+  const today = localDateStr()
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return localDateStr(d) })()
+
+  const dayLabel = (dateStr) => {
+    if (dateStr === today) return 'Today'
+    if (dateStr === tomorrow) return 'Tomorrow'
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })
+  }
+
+  const todayEvents = events.filter((e) => e.date === today)
+  const hasClosedToday = todayEvents.some((e) => e.eventType === 'Closed')
+
+  return (
+    <div
+      className="panel"
+      style={{
+        marginBottom: 16,
+        borderLeft: `3px solid ${hasClosedToday ? 'var(--gcp-red)' : 'var(--gcp-blue)'}`,
+        padding: '12px 16px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+          {Icons.events}&nbsp; Upcoming work events
+        </span>
+        <button className="iconBtn" onClick={onDismiss} title="Dismiss">{Icons.close}</button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {events.map((e) => {
+          const s = WE_CHIP[e.eventType] || WE_CHIP.DayOff
+          return (
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 13 }}>
+              <span style={{ minWidth: 80, color: 'var(--text-muted)', fontSize: 12, flexShrink: 0 }}>
+                {dayLabel(e.date)}
+              </span>
+              <span style={{ padding: '2px 9px', borderRadius: 12, background: s.bg, color: s.color, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                {e.eventType}
+              </span>
+              <span style={{ fontWeight: 500 }}>{e.name}</span>
+              {e.eventType === 'Closed' && (
+                <span style={{ fontSize: 11, color: 'var(--gcp-red)', opacity: 0.8 }}>— clock-ins blocked</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const EVENT_TYPES = ['Holiday', 'DayOff', 'Closed']
+const EVENT_META = {
+  Holiday: { color: '#9334e6', bg: 'rgba(147,52,230,.12)', label: 'Holiday',  desc: 'Company / public holiday — no attendance required.' },
+  DayOff:  { color: 'var(--text-muted)', bg: 'rgba(120,120,120,.10)', label: 'Day Off', desc: 'No attendance expected for this day.' },
+  Closed:  { color: 'var(--gcp-red)',  bg: 'rgba(234,67,53,.12)',  label: 'Closed',  desc: 'Clock-ins are blocked — employees cannot Time In.' },
+}
+
+const EMPTY_FORM = (now) => ({ date: now.toISOString().slice(0, 10), eventType: 'Holiday', name: '' })
 
 function WorkEventPanel() {
   const now = new Date()
@@ -813,8 +993,16 @@ function WorkEventPanel() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState(null)
-  const [form, setForm] = useState({ date: now.toISOString().slice(0, 10), eventType: 'Holiday', name: '' })
+
+  // Add modal
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM(now))
   const [saving, setSaving] = useState(false)
+  const [formErr, setFormErr] = useState(null)
+
+  // Detail / delete modal
+  const [viewEvent, setViewEvent] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -827,19 +1015,29 @@ function WorkEventPanel() {
 
   useEffect(() => { load() }, [load])
 
+  const openAdd = () => { setForm(EMPTY_FORM(new Date())); setFormErr(null); setShowAdd(true) }
+  const closeAdd = () => { setShowAdd(false); setFormErr(null) }
+
   const addEvent = async () => {
-    if (!form.name.trim()) { setNotice({ type: 'error', text: 'Name is required.' }); return }
+    if (!form.name.trim()) { setFormErr('Name / description is required.'); return }
     setSaving(true)
-    const res = await workEventApi.create({ date: form.date, eventType: form.eventType, name: form.name })
+    const res = await workEventApi.create({ date: form.date, eventType: form.eventType, name: form.name.trim() })
     setSaving(false)
-    if (res.isSuccess) { setForm(f => ({ ...f, name: '' })); setNotice({ type: 'ok', text: 'Event added.' }); load() }
-    else setNotice({ type: 'error', text: res.message })
+    if (res.isSuccess) {
+      closeAdd()
+      setNotice({ type: 'ok', text: `"${form.name.trim()}" added.` })
+      load()
+    } else {
+      setFormErr(res.message || 'Failed to add event.')
+    }
   }
 
   const removeEvent = async (id) => {
+    setDeleting(true)
     const res = await workEventApi.remove(id)
-    if (res.isSuccess) load()
-    else setNotice({ type: 'error', text: res.message })
+    setDeleting(false)
+    if (res.isSuccess) { setViewEvent(null); load() }
+    else setNotice({ type: 'error', text: res.message || 'Delete failed.' })
   }
 
   const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12) } else setMonth(m => m - 1) }
@@ -847,62 +1045,151 @@ function WorkEventPanel() {
 
   return (
     <div>
-      {notice && <p className={`alert alert--${notice.type === 'ok' ? 'ok' : 'error'}`} style={{ marginBottom: 16 }}>{notice.text}</p>}
+      {notice && (
+        <p className={`alert alert--${notice.type === 'ok' ? 'ok' : 'error'}`} style={{ marginBottom: 16 }}>
+          {notice.text}
+        </p>
+      )}
 
       <div className="panel">
-        <h3 className="panel__title">Add work event</h3>
-        <div className="fieldRow" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="field">
-            <label>Date *</label>
-            <input type="date" className="input" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+        <div className="topRow" style={{ marginBottom: 14 }}>
+          <div>
+            <h3 className="panel__title" style={{ margin: 0 }}>Work events</h3>
+            <p className="pageSub" style={{ marginTop: 2 }}>Holidays, days off, and attendance closures by date.</p>
           </div>
-          <div className="field">
-            <label>Type *</label>
-            <select className="select" value={form.eventType} onChange={e => setForm(f => ({ ...f, eventType: e.target.value }))}>
-              {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="field" style={{ flex: 2 }}>
-            <label>Name / Description *</label>
-            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="e.g. Rizal Day, Team Building, Office Closed" />
-          </div>
-          <div className="field">
-            <label>&nbsp;</label>
-            <button className="btnPrimary" onClick={addEvent} disabled={saving}>{saving ? 'Adding…' : '+ Add'}</button>
-          </div>
+          <button className="btnPrimary" onClick={openAdd}>{Icons.plus} Add event</button>
         </div>
-        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          <strong>Holiday</strong> — company/public holiday &nbsp;·&nbsp;
-          <strong>DayOff</strong> — no attendance expected &nbsp;·&nbsp;
-          <strong>Closed</strong> — blocks clock-ins for that day
-        </p>
-      </div>
 
-      <div className="panel" style={{ marginTop: 16 }}>
+        {/* Month navigator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <button className="iconBtn" onClick={prevMonth}>{Icons.chevLeft}</button>
           <span style={{ fontWeight: 600, minWidth: 130, textAlign: 'center' }}>{MONTHS[month - 1]} {year}</span>
           <button className="iconBtn" onClick={nextMonth}>{Icons.chevRight}</button>
         </div>
 
-        {loading ? <p className="muted">Loading…</p>
-          : events.length === 0
-          ? <p className="muted" style={{ fontSize: 13 }}>No work events this month.</p>
-          : events.map(ev => (
-            <div key={ev.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
-              <div>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 10 }}>{ev.date}</span>
-                <span style={{ fontWeight: 600, color: EVENT_COLORS[ev.eventType] || 'var(--text-primary)', marginRight: 8 }}>[{ev.eventType}]</span>
-                <span style={{ fontSize: 14 }}>{ev.name}</span>
-              </div>
-              <button className="iconBtn" onClick={() => removeEvent(ev.id)} title="Remove" style={{ color: 'var(--gcp-red)' }}>
-                {Icons.trash}
+        {loading ? (
+          <p className="muted" style={{ padding: '12px 0' }}>Loading…</p>
+        ) : events.length === 0 ? (
+          <p className="muted" style={{ fontSize: 13, padding: '12px 0' }}>No work events this month. Click <strong>Add event</strong> to create one.</p>
+        ) : (
+          events.map(ev => {
+            const meta = EVENT_META[ev.eventType] || EVENT_META.DayOff
+            return (
+              <button
+                key={ev.id}
+                onClick={() => setViewEvent(ev)}
+                style={{
+                  display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left',
+                  padding: '10px 0', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: 'none', cursor: 'pointer', gap: 12,
+                }}
+              >
+                <span style={{ minWidth: 90, fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>{ev.date}</span>
+                <span style={{ padding: '2px 9px', borderRadius: 12, background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                  {meta.label}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 500, flex: 1, color: 'var(--text-primary)' }}>{ev.name}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{Icons.chevRight}</span>
               </button>
-            </div>
-          ))
-        }
+            )
+          })
+        )}
       </div>
+
+      {/* ── Add event modal ─────────────────────────────────────── */}
+      {showAdd && (
+        <div className="modalOverlay" onClick={closeAdd}>
+          <div className="modal modal--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title" style={{ margin: 0 }}>Add work event</h3>
+              <button className="iconBtn" onClick={closeAdd}>{Icons.close}</button>
+            </div>
+            <div style={{ padding: '0 24px 24px' }}>
+              {formErr && <p className="alert alert--error" style={{ margin: '12px 0' }}>{formErr}</p>}
+
+              <div className="fieldRow" style={{ marginTop: 16, flexWrap: 'wrap' }}>
+                <div className="field">
+                  <label>Date *</label>
+                  <input type="date" className="input" value={form.date}
+                    onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+                </div>
+                <div className="field">
+                  <label>Type *</label>
+                  <select className="select" value={form.eventType}
+                    onChange={e => setForm(f => ({ ...f, eventType: e.target.value }))}>
+                    {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Type hint */}
+              {form.eventType && EVENT_META[form.eventType] && (
+                <p className="muted" style={{ fontSize: 12, margin: '4px 0 12px' }}>
+                  {EVENT_META[form.eventType].desc}
+                </p>
+              )}
+
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Name / Description *</label>
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setFormErr(null) }}
+                  placeholder={form.eventType === 'Holiday' ? 'e.g. Rizal Day' : form.eventType === 'DayOff' ? 'e.g. Team Building' : 'e.g. Office Maintenance'}
+                  onKeyDown={e => e.key === 'Enter' && addEvent()}
+                  autoFocus
+                />
+              </div>
+
+              <div className="modal__actions">
+                <button className="btnGhost" onClick={closeAdd}>Cancel</button>
+                <button className="btnPrimary" onClick={addEvent} disabled={saving}>
+                  {saving ? 'Adding…' : 'Add event'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Event detail modal ──────────────────────────────────── */}
+      {viewEvent && (
+        <div className="modalOverlay" onClick={() => !deleting && setViewEvent(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div className="modal__header">
+              <h3 className="modal__title" style={{ margin: 0 }}>Work event</h3>
+              <button className="iconBtn" onClick={() => setViewEvent(null)}>{Icons.close}</button>
+            </div>
+            <div style={{ padding: '0 24px 24px' }}>
+              {(() => {
+                const meta = EVENT_META[viewEvent.eventType] || EVENT_META.DayOff
+                return (
+                  <>
+                    <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border-color)', marginBottom: 14 }}>
+                      <span style={{ padding: '3px 12px', borderRadius: 14, background: meta.bg, color: meta.color, fontSize: 12, fontWeight: 600 }}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <div className="kv"><span className="kv__k">Date</span>
+                      <span className="kv__v">{new Date(viewEvent.date + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    </div>
+                    <div className="kv"><span className="kv__k">Name</span><span className="kv__v">{viewEvent.name}</span></div>
+                    <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>{meta.desc}</p>
+                  </>
+                )
+              })()}
+              <div className="modal__actions">
+                <button className="btnGhost" onClick={() => setViewEvent(null)}>Close</button>
+                <button className="btnSm btnSm--danger" onClick={() => removeEvent(viewEvent.id)} disabled={deleting}>
+                  {deleting ? 'Deleting…' : `${Icons.trash} Delete`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

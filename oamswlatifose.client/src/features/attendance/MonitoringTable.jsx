@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Icons } from '../../lib/ui'
+import { exportCSV, exportExcel, printTable } from '../../lib/export'
 
 // GCP-style table card: funnel filter bar + a sortable-looking header + rows.
 // columns: [{ key, label, num?, render(row) }]. filterKeys: row keys to match the filter against.
-export default function MonitoringTable({ columns, rows, loading, emptyText, filterKeys = [] }) {
+// exportOptions: { filename: string, title?: string } — if provided, renders Print / CSV / Excel buttons.
+export default function MonitoringTable({ columns, rows, loading, emptyText, filterKeys = [], exportOptions }) {
   const [filter, setFilter] = useState('')
 
   const visible = useMemo(() => {
@@ -25,6 +27,13 @@ export default function MonitoringTable({ columns, rows, loading, emptyText, fil
           onChange={(e) => setFilter(e.target.value)}
           aria-label="Filter rows"
         />
+        {exportOptions && (
+          <div className="exportBtns">
+            <button className="btnSm" onClick={() => printTable(visible, columns, exportOptions.title || exportOptions.filename)}>Print / PDF</button>
+            <button className="btnSm" onClick={() => exportCSV(visible, columns, exportOptions.filename)}>CSV</button>
+            <button className="btnSm" onClick={() => exportExcel(visible, columns, exportOptions.filename)}>Excel</button>
+          </div>
+        )}
       </div>
       <div className="tableScroll">
         <table className="table">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { attendanceApi, workEventApi } from '../../lib/api'
+import { attendanceApi, workEventApi, leaveApi } from '../../lib/api'
 import { Icons } from '../../lib/ui'
 
 // Module-level cache: year → Map<"YYYY-MM-DD", name>
@@ -67,7 +67,7 @@ const WE_STYLE = {
   Closed:  { color: 'var(--gcp-red)', bg: 'rgba(234,67,53,.10)' },
 }
 
-function DayDetail({ day, record, holiday, workEvent, isOff, onClose }) {
+function DayDetail({ day, record, holiday, workEvent, isOff, onLeave, onClose }) {
   const ss = record ? statusStyle(record.status) : null
   const label = new Date(`${day}T12:00:00`).toLocaleDateString('en-PH', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -97,13 +97,25 @@ function DayDetail({ day, record, holiday, workEvent, isOff, onClose }) {
           </div>
         )}
 
-        {holiday && !record && !isOff && (
+        {holiday && !record && (
           <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(147,52,230,.10)', color: '#9334e6', fontSize: 13 }}>
-            Public holiday — {holiday}
+            Public holiday — {holiday}. No attendance required.
           </div>
         )}
 
-        {!record && !isOff && !holiday && (
+        {workEvent && !record && !holiday && workEvent.type !== 'Closed' && (
+          <div style={{ padding: '10px 14px', borderRadius: 8, background: WE_STYLE[workEvent.type]?.bg, color: WE_STYLE[workEvent.type]?.color, fontSize: 13 }}>
+            {workEvent.type === 'Holiday' ? 'Holiday' : 'Day off'} — {workEvent.name}. No attendance required.
+          </div>
+        )}
+
+        {onLeave && !record && (
+          <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(66,133,244,.12)', color: 'var(--gcp-blue)', fontSize: 13 }}>
+            On approved leave — no attendance required.
+          </div>
+        )}
+
+        {!record && !isOff && !holiday && !workEvent && !onLeave && (
           <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(234,67,53,.08)', color: 'var(--gcp-red)', fontSize: 13 }}>
             No attendance record
           </div>
@@ -130,10 +142,11 @@ export default function AttendanceCalendar({ schedule }) {
   const now = new Date()
   const [year, setYear]       = useState(now.getFullYear())
   const [month, setMonth]     = useState(now.getMonth() + 1) // 1-based
-  const [records, setRecords] = useState([])
+  const [records, setRecords]     = useState([])
   const [loadingAtt, setLoadingAtt] = useState(true)
   const [holidays, setHolidays]     = useState({}) // "YYYY-MM-DD" → name
   const [workEvents, setWorkEvents] = useState({}) // "YYYY-MM-DD" → { type, name }
+  const [approvedLeaves, setApprovedLeaves] = useState(new Set()) // Set of "YYYY-MM-DD" dates covered by approved leave
   const [detail, setDetail]         = useState(null)
   const today = todayStr()
 
@@ -167,9 +180,26 @@ export default function AttendanceCalendar({ schedule }) {
     setWorkEvents(map)
   }, [])
 
+  // Load approved leave requests so those days show as "Leave" not "Absent"
+  const loadLeaves = useCallback(async () => {
+    const res = await leaveApi.mine()
+    if (!res.isSuccess) return
+    const approved = new Set()
+    const list = Array.isArray(res.data) ? res.data : []
+    list.filter(l => l.status === 'Approved').forEach(l => {
+      const start = new Date(l.startDate)
+      const end   = new Date(l.endDate)
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        approved.add(d.toISOString().slice(0, 10))
+      }
+    })
+    setApprovedLeaves(approved)
+  }, [])
+
   useEffect(() => { loadAtt(year, month) }, [loadAtt, year, month])
   useEffect(() => { loadHolidays(year) }, [loadHolidays, year])
   useEffect(() => { loadWorkEvents(year, month) }, [loadWorkEvents, year, month])
+  useEffect(() => { loadLeaves() }, [loadLeaves])
 
   const prevMonth = () => {
     if (month === 1) { setYear((y) => y - 1); setMonth(12) }
@@ -205,11 +235,12 @@ export default function AttendanceCalendar({ schedule }) {
     const dow = new Date(year, month - 1, d).getDay()
     const we  = workEvents[ds] || null
     setDetail({
-      day:       ds,
-      record:    recordMap[ds] || null,
-      holiday:   holidays[ds] || null,
-      workEvent: we,
-      isOff:     !workDays.has(dow),
+      day:          ds,
+      record:       recordMap[ds] || null,
+      holiday:      holidays[ds] || null,
+      workEvent:    we,
+      isOff:        !workDays.has(dow),
+      onLeave:      approvedLeaves.has(ds),
     })
   }
 
@@ -250,6 +281,7 @@ export default function AttendanceCalendar({ schedule }) {
               const isOff     = !workDays.has(dow)
               const holiday   = holidays[ds] || null
               const workEvent = workEvents[ds] || null
+              const onLeave   = approvedLeaves.has(ds)
               const isToday   = ds === today
               const isFuture  = ds > today
               const ss        = record ? statusStyle(record.status) : null
@@ -268,29 +300,41 @@ export default function AttendanceCalendar({ schedule }) {
                 >
                   <span className="calendarDay">{d}</span>
 
-                  {holiday && (
-                    <span className="calendarChip" style={{ background: 'rgba(147,52,230,.15)', color: '#9334e6' }}>
-                      {holiday}
-                    </span>
-                  )}
-
-                  {workEvent && (
-                    <span className="calendarChip" style={{ background: weStyle?.bg, color: weStyle?.color }}>
-                      {workEvent.name}
-                    </span>
-                  )}
-
+                  {/* Attendance record takes visual priority */}
                   {record && (
                     <span className="calendarChip" style={{ background: ss.bg, color: ss.color }}>
                       {ss.label}
                     </span>
                   )}
 
-                  {!record && isOff && !isFuture && !holiday && (
+                  {/* Approved leave (no clock-in expected) */}
+                  {onLeave && !record && (
+                    <span className="calendarChip" style={{ background: 'rgba(66,133,244,.12)', color: 'var(--gcp-blue)' }}>
+                      Leave
+                    </span>
+                  )}
+
+                  {/* Holiday from Nager API */}
+                  {holiday && !record && !onLeave && (
+                    <span className="calendarChip" style={{ background: 'rgba(147,52,230,.15)', color: '#9334e6' }}>
+                      {holiday}
+                    </span>
+                  )}
+
+                  {/* Custom work event (Holiday/DayOff/Closed) */}
+                  {workEvent && !record && !holiday && !onLeave && (
+                    <span className="calendarChip" style={{ background: weStyle?.bg, color: weStyle?.color }}>
+                      {workEvent.name}
+                    </span>
+                  )}
+
+                  {/* Weekly off */}
+                  {!record && isOff && !isFuture && !holiday && !workEvent && !onLeave && (
                     <span className="calendarChip calendarChip--off">Weekly Off</span>
                   )}
 
-                  {!record && !isOff && !holiday && !isFuture && !isToday && (
+                  {/* Absent — no record, no holiday, no work event, no approved leave, not weekly off, not future/today */}
+                  {!record && !isOff && !holiday && !workEvent && !onLeave && !isFuture && !isToday && (
                     <span className="calendarChip" style={{ background: 'rgba(234,67,53,.10)', color: 'var(--gcp-red)' }}>
                       Absent
                     </span>
@@ -325,6 +369,7 @@ export default function AttendanceCalendar({ schedule }) {
           holiday={detail.holiday}
           workEvent={detail.workEvent}
           isOff={detail.isOff}
+          onLeave={detail.onLeave}
           onClose={() => setDetail(null)}
         />
       )}

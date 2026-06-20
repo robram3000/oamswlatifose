@@ -28,7 +28,7 @@ namespace oamswlatifose.Server.Model.occurance
         public string LeaveType { get; set; } // Annual, Sick, Emergency, Other
 
         [MaxLength(500)]
-        public string Reason { get; set; }
+        public string Reason { get; set; } = "";
 
         [Required]
         [MaxLength(20)]
@@ -37,7 +37,7 @@ namespace oamswlatifose.Server.Model.occurance
         public int? ApprovedByUserId { get; set; }
 
         [MaxLength(500)]
-        public string ApprovalNote { get; set; }
+        public string ApprovalNote { get; set; } = "";
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
