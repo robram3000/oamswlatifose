@@ -193,6 +193,44 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
         }
 
         /// <inheritdoc />
+        public async Task<ServiceResponse<AttendanceResponseDTO>> LogTimeOffAsync(int employeeId)
+        {
+            return await ExecuteWithPerformanceTrackingAsync(async () =>
+            {
+                try
+                {
+                    var today = DateTime.Today;
+                    var existing = (await _queryRepository.GetAttendanceByEmployeeIdAsync(employeeId))
+                        .FirstOrDefault(a => a.AttendanceDate == today);
+
+                    if (existing != null)
+                        return ServiceResponse<AttendanceResponseDTO>.FailureResult(
+                            "You already have an attendance record for today.");
+
+                    var record = new EMAttendance
+                    {
+                        EmployeeId = employeeId,
+                        AttendanceDate = today,
+                        Status = "Time Off",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        Remarks = "Time off"
+                    };
+
+                    var created = await _commandRepository.CreateAttendanceAsync(record);
+                    _logger.LogInformation("Time off logged for employee {EmployeeId}", employeeId);
+                    return ServiceResponse<AttendanceResponseDTO>.SuccessResult(
+                        _mapper.Map<AttendanceResponseDTO>(created), "Time off recorded for today.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error logging time off for employee {EmployeeId}", employeeId);
+                    return ServiceResponse<AttendanceResponseDTO>.FromException(ex, "Failed to log time off");
+                }
+            }, "LogTimeOffAsync");
+        }
+
+        /// <inheritdoc />
         public async Task<ServiceResponse<AttendanceResponseDTO>> ClockOutAsync(ClockOutDTO clockOutDto, string clientIp)
         {
             return await ExecuteWithPerformanceTrackingAsync(async () =>

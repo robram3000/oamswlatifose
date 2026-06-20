@@ -103,6 +103,7 @@ export const attendanceApi = {
   requestOtp: (coords) => api.post('/attendance/clock-in/request-otp', coords || {}),
   verify: (otpCode) => api.post('/attendance/clock-in/verify', { otpCode }),
   clockOut: () => api.post('/attendance/clock-out', {}),
+  timeOff: () => api.post('/attendance/time-off', {}),
   byDate: (date) => api.get(`/attendance/admin/by-date/${date}`),
   employees: () => api.get('/employees?pageNumber=1&pageSize=200'),
 }

@@ -129,6 +129,28 @@ namespace oamswlatifose.Server.Controllers
 
         #region Employee Self-Service Endpoints
 
+        [HttpPost("time-off")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> LogTimeOff()
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceResponseDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _attendanceService.LogTimeOffAsync(employeeId);
+                return result.IsSuccess ? Ok(result) : BadRequest(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error logging time off for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceResponseDTO>.FromException(ex, "Failed to log time off"));
+            }
+        }
+
         /// <summary>
         /// Records employee clock-in for the current day.
         /// Automatically sets attendance date to today and records the time.

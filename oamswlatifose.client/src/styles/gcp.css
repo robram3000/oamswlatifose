@@ -194,6 +194,7 @@ button { font-family: inherit; }
 .kv__v { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
 .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.actionBtns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 .fieldRow { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }

@@ -42,6 +42,9 @@ namespace oamswlatifose.Server.Services.Attendance.Interfaces
         /// <returns>The created attendance record with calculated fields</returns>
         Task<ServiceResponse<AttendanceResponseDTO>> ClockInAsync(ClockInDTO clockInDto, string clientIp);
 
+        /// <summary>Marks today as a time-off day. Fails if the employee already has a record for today.</summary>
+        Task<ServiceResponse<AttendanceResponseDTO>> LogTimeOffAsync(int employeeId);
+
         /// <summary>
         /// Records employee clock-out for the current day.
         /// Updates the existing attendance record with clock-out time and calculates hours worked.

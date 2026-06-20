@@ -79,6 +79,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
   // ── Derived: clock state ──────────────────────────────────────────
   const hasTimeIn = !!(today && (today.timeInFormatted || today.timeIn))
   const hasTimeOut = !!(today && (today.timeOutFormatted || today.timeOut))
+  const isTimeOff = !!(today && /time.?off/i.test(today.status || ''))
 
   // ── Derived: range-filtered history + metrics ─────────────────────
   const filtered = useMemo(() => {
@@ -145,17 +146,36 @@ export default function AttendanceConsole({ user, onSignOut }) {
     if (res.isSuccess) { await loadMine(); if (isManager) loadTeam(teamDate) }
   }
 
+  const clockTimeOff = async () => {
+    setNotice(null)
+    setActing(true)
+    const res = await attendanceApi.timeOff()
+    setActing(false)
+    setNotice({ type: res.isSuccess ? 'ok' : 'error', text: res.message || (res.isSuccess ? 'Time off marked.' : 'Failed to mark time off.') })
+    if (res.isSuccess) { await loadMine(); if (isManager) loadTeam(teamDate) }
+  }
+
   const refresh = () => { loadMine(); if (isManager) loadTeam(teamDate) }
 
   // ── Primary action button (varies by clock state) ─────────────────
   const ActionButton = ({ inHeader }) => {
+    // Already marked as time off today
+    if (isTimeOff) {
+      return <button className="btnGhost" disabled>{Icons.umbrella} Time Off</button>
+    }
+    // Not clocked in yet — show Time In + Time Off side by side
     if (!hasTimeIn) {
       const busy = acting || locating
       return (
-        <button className="btnPrimary" onClick={startTimeIn} disabled={busy}>
-          {busy ? <span className="spinner" /> : Icons.clock}
-          {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
-        </button>
+        <div className="actionBtns">
+          <button className="btnPrimary" onClick={startTimeIn} disabled={busy}>
+            {busy ? <span className="spinner" /> : Icons.clock}
+            {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
+          </button>
+          <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
+            {Icons.umbrella} Time Off
+          </button>
+        </div>
       )
     }
     if (!hasTimeOut) {
@@ -268,7 +288,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
                           style={{ background: hasTimeIn ? statusColor(today?.status) : 'var(--text-disabled)' }} />
                     <div>
                       <div className="statusBig__label">
-                        {!hasTimeIn ? 'Not clocked in' : hasTimeOut ? 'Completed' : (today?.status || 'Clocked in')}
+                        {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? 'Completed' : (today?.status || 'Clocked in')}
                       </div>
                       <div className="statusBig__sub">
                         {hasTimeIn
