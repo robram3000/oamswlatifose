@@ -34,11 +34,17 @@ builder.Services.AddHealthChecks(builder.Configuration);
 builder.Services.AddCustomResponseCaching();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddHttpContextAccessor();
-var app = builder.Build();  
+var app = builder.Build();
+
+// Apply migrations on every startup — runs before any request is served.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
 
 if (app.Environment.IsDevelopment())
 {
@@ -46,7 +52,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Always run migrations and seed demo accounts (idempotent — safe to run on every startup).
+// Seed demo accounts (idempotent — safe on every startup).
 await app.SeedDevAsync();
 
 if (app.Environment.IsDevelopment())

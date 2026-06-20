@@ -41,9 +41,6 @@ namespace oamswlatifose.Server.Extensions
 
             try
             {
-                // Apply pending migrations so the schema (schedule/OTP/branch/role tables) is current.
-                await db.Database.MigrateAsync();
-
                 // OTP emails go to the employee address — default to the SMTP inbox so they're
                 // deliverable. Per-role accounts use +tag aliases (same inbox, distinct addresses).
                 var seedEmail = config["DevSeed:Email"]
