@@ -107,18 +107,25 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                 await _db.SaveChangesAsync();
 
                 var name = $"{employee.FirstName} {employee.LastName}".Trim();
-                // Send the code via the raw SMTP path (SendHtmlEmailAsync) so we don't depend on a
-                // configured email template — the body is self-contained.
-                var emailResult = await _emailService.SendHtmlEmailAsync(
-                    employee.Email,
-                    "Your attendance clock-in code",
-                    BuildOtpEmail(name, code, OtpExpiryMinutes));
-                if (!emailResult.IsSuccess)
+                var emailTo = employee.Email;
+                var emailBody = BuildOtpEmail(name, code, OtpExpiryMinutes);
+
+                // Send in background so the clock-in response is instant — the user sees the
+                // OTP modal immediately while the email is on its way (SMTP takes 3–6 s).
+                _ = Task.Run(async () =>
                 {
-                    _logger.LogWarning("Failed to email clock-in OTP to employee {EmployeeId}: {Msg}", employeeId, emailResult.Message);
-                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
-                        "Could not send the verification email. Please try again.");
-                }
+                    try
+                    {
+                        var r = await _emailService.SendHtmlEmailAsync(
+                            emailTo, "Your attendance clock-in code", emailBody);
+                        if (!r.IsSuccess)
+                            _logger.LogWarning("OTP email failed for employee {EmployeeId}: {Msg}", employeeId, r.Message);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "OTP email exception for employee {EmployeeId}", employeeId);
+                    }
+                });
 
                 _logger.LogInformation("Clock-in OTP issued for employee {EmployeeId} from {Ip}", employeeId, clientIp);
 
