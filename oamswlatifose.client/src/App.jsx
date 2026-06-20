@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { auth } from './lib/api'
 import LoginPage from './features/auth/LoginPage'
 import AttendanceConsole from './features/attendance/AttendanceConsole'
 
 export default function App() {
-  // Treat a stored token as "signed in"; a 401 from any call clears it (see lib/api).
   const [user, setUser] = useState(() => (auth.token ? auth.user : null))
+
+  // Any API call that returns 401 dispatches this event (see lib/api.js).
+  // We listen here so the console unmounts and the login screen appears immediately.
+  useEffect(() => {
+    const handle = () => setUser(null)
+    window.addEventListener('auth:expired', handle)
+    return () => window.removeEventListener('auth:expired', handle)
+  }, [])
 
   if (!user) {
     return <LoginPage onLoggedIn={setUser} />

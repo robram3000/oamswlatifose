@@ -51,8 +51,9 @@ async function request(method, path, body) {
   }
 
   if (res.status === 401) {
-    // Token rejected/expired — drop it so the app falls back to the login screen.
     auth.clear()
+    // Signal App.jsx to unmount the console and show the login screen.
+    window.dispatchEvent(new Event('auth:expired'))
     return { isSuccess: false, message: 'Your session expired. Please sign in again.', data: null, status: 401 }
   }
 
