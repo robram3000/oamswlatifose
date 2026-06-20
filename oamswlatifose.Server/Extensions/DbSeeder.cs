@@ -51,8 +51,21 @@ namespace oamswlatifose.Server.Extensions
 
                 foreach (var a in Accounts)
                 {
-                    if (await db.EMAuthorizerusers.AnyAsync(u => u.Username == a.Username))
+                    // Reset lockout for existing seed accounts so a bad-attempt streak never
+                    // permanently locks out the demo logins across deployments.
+                    var existing = await db.EMAuthorizerusers
+                        .FirstOrDefaultAsync(u => u.Username == a.Username);
+                    if (existing != null)
+                    {
+                        if (existing.FailedLoginAttempts > 0 || existing.LockoutEnd.HasValue)
+                        {
+                            existing.FailedLoginAttempts = 0;
+                            existing.LockoutEnd = null;
+                            await db.SaveChangesAsync();
+                            logger.LogInformation("Seed account '{User}' lockout cleared.", a.Username);
+                        }
                         continue;
+                    }
 
                     var email = Alias(seedEmail, a.Tag);
 

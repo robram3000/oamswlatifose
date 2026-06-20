@@ -51,10 +51,15 @@ async function request(method, path, body) {
   }
 
   if (res.status === 401) {
+    const wasLoggedIn = !!auth.token
     auth.clear()
-    // Signal App.jsx to unmount the console and show the login screen.
-    window.dispatchEvent(new Event('auth:expired'))
-    return { isSuccess: false, message: 'Your session expired. Please sign in again.', data: null, status: 401 }
+    // Only treat as session expiry when the user was already authenticated.
+    // Login failures (wrong password) also return 401 but should show the server's message.
+    if (wasLoggedIn) {
+      window.dispatchEvent(new Event('auth:expired'))
+      return { isSuccess: false, message: 'Your session expired. Please sign in again.', data: null, status: 401 }
+    }
+    // Not logged in — fall through to read the actual error body from the server.
   }
 
   let payload = null
