@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { authApi, auth } from '../../lib/api'
+import { Icons } from '../../lib/ui'
 
 export default function LoginPage({ onLoggedIn }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -38,8 +40,15 @@ export default function LoginPage({ onLoggedIn }) {
         </div>
         <div className="loginField">
           <label htmlFor="p">Password</label>
-          <input id="p" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                 autoComplete="current-password" required />
+          <div className="pwWrap">
+            <input id="p" type={showPw ? 'text' : 'password'} value={password}
+                   onChange={(e) => setPassword(e.target.value)}
+                   autoComplete="current-password" required />
+            <button type="button" className="pwToggle" onClick={() => setShowPw(v => !v)}
+                    tabIndex={-1} aria-label={showPw ? 'Hide password' : 'Show password'}>
+              {showPw ? Icons.eyeOff : Icons.eye}
+            </button>
+          </div>
         </div>
 
         <button className="loginBtn" type="submit" disabled={loading || !username || !password}>
