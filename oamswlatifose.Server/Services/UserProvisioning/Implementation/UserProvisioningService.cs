@@ -136,6 +136,71 @@ namespace oamswlatifose.Server.Services.UserProvisioning.Implementation
             }
         }
 
+        public async Task<ServiceResponse<UserAccountSummaryDTO>> UpdateAsync(int id, UpdateUserAccountDTO dto)
+        {
+            try
+            {
+                var account = await _db.EMAuthorizerusers
+                    .Include(u => u.Role)
+                    .Include(u => u.Employee)
+                    .FirstOrDefaultAsync(u => u.Id == id);
+
+                if (account == null)
+                    return ServiceResponse<UserAccountSummaryDTO>.FailureResult("User not found");
+
+                var role = await _db.EMRoleBasedAccessControls.FirstOrDefaultAsync(r => r.Id == dto.RoleId && r.IsActive);
+                if (role == null)
+                    return ServiceResponse<UserAccountSummaryDTO>.FailureResult("Selected role does not exist");
+
+                // Update employee fields
+                if (account.Employee != null)
+                {
+                    account.Employee.FirstName = dto.FirstName?.Trim() ?? account.Employee.FirstName;
+                    account.Employee.LastName = dto.LastName?.Trim() ?? account.Employee.LastName;
+                    account.Employee.Email = dto.Email?.Trim() ?? account.Employee.Email;
+                    account.Employee.Phone = dto.Phone?.Trim() ?? account.Employee.Phone;
+                    account.Employee.Position = dto.Position?.Trim() ?? account.Employee.Position;
+                    account.Employee.Department = dto.Department?.Trim() ?? account.Employee.Department;
+                    account.Employee.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // Update login account fields
+                account.Email = dto.Email?.Trim() ?? account.Email;
+                account.RoleId = role.Id;
+                account.IsActive = dto.IsActive;
+
+                if (!string.IsNullOrWhiteSpace(dto.NewPassword))
+                {
+                    var (hash, salt) = PasswordHasher.HashPassword(dto.NewPassword);
+                    account.PasswordHash = hash;
+                    account.PasswordSalt = salt;
+                }
+
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("User account {Id} ('{Username}') updated", id, account.Username);
+
+                return ServiceResponse<UserAccountSummaryDTO>.SuccessResult(new UserAccountSummaryDTO
+                {
+                    Id = account.Id,
+                    Username = account.Username,
+                    Email = account.Email,
+                    RoleId = role.Id,
+                    RoleName = role.RoleName,
+                    EmployeeId = account.EmployeeId,
+                    EmployeeName = account.Employee != null ? $"{account.Employee.FirstName} {account.Employee.LastName}" : null,
+                    Department = account.Employee?.Department,
+                    IsActive = account.IsActive,
+                    CreatedAtFormatted = account.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
+                }, "User updated");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user account {Id}", id);
+                return ServiceResponse<UserAccountSummaryDTO>.FromException(ex, "Failed to update user");
+            }
+        }
+
         public async Task<ServiceResponse<List<RoleOptionDTO>>> GetRoleOptionsAsync()
         {
             try

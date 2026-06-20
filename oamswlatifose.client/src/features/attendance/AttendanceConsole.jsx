@@ -19,15 +19,22 @@ const localDateStr = (d = new Date()) => {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
   return z.toISOString().slice(0, 10)
 }
+const rangeStart = (days) => {
+  const d = new Date()
+  d.setDate(d.getDate() - (days - 1))
+  return localDateStr(d)
+}
 const isPresent = (s) => /present|on time/i.test(s || '')
 const isLate = (s) => /late/i.test(s || '')
 const isAbsent = (s) => /absent/i.test(s || '')
+const isTimeOffStatus = (s) => /time.?off/i.test(s || '')
 
 export default function AttendanceConsole({ user, onSignOut }) {
   const isManager = auth.isManager
-  const [view, setView] = useState('monitoring') // monitoring | attendance | schedule
+  const [view, setView] = useState('monitoring')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  // Employee-only data
   const [today, setToday] = useState(null)
   const [schedule, setSchedule] = useState(null)
   const [history, setHistory] = useState([])
@@ -39,10 +46,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   // OTP modal
   const [otpInfo, setOtpInfo] = useState(null)
-  // GPS captured at Time-In, reused on resend so Office/Outside stays consistent.
   const lastCoords = useRef(null)
 
-  // Manager-only (Admin/HR)
+  // Manager-only
   const [teamDate, setTeamDate] = useState(localDateStr())
   const [teamRows, setTeamRows] = useState([])
   const [teamLoading, setTeamLoading] = useState(false)
@@ -51,7 +57,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [showSchedModal, setShowSchedModal] = useState(false)
   const [viewSched, setViewSched] = useState(null)
 
+  // Admin attendance (all employees range view)
+  const [adminAttRows, setAdminAttRows] = useState([])
+  const [adminAttLoading, setAdminAttLoading] = useState(false)
+  const [adminRangeKey, setAdminRangeKey] = useState('7d')
+
   const range = RANGES.find((r) => r.key === rangeKey) || RANGES[2]
+  const adminRange = RANGES.find((r) => r.key === adminRangeKey) || RANGES[1]
 
   const loadMine = useCallback(async () => {
     setLoading(true)
@@ -76,15 +88,27 @@ export default function AttendanceConsole({ user, onSignOut }) {
     setTeamLoading(false)
   }, [])
 
+  const loadAdminAtt = useCallback(async (days) => {
+    setAdminAttLoading(true)
+    const start = rangeStart(days)
+    const end = localDateStr()
+    const res = await attendanceApi.adminAll(start, end)
+    setAdminAttRows(res.isSuccess ? (res.data?.items ?? res.data ?? []) : [])
+    setAdminAttLoading(false)
+  }, [])
+
   useEffect(() => { loadMine() }, [loadMine])
   useEffect(() => { if (isManager) loadTeam(teamDate) }, [isManager, teamDate, loadTeam])
+  useEffect(() => {
+    if (isManager && view === 'attendance') loadAdminAtt(adminRange.days)
+  }, [isManager, view, adminRangeKey, loadAdminAtt, adminRange.days])
 
-  // ── Derived: clock state ──────────────────────────────────────────
+  // ── Derived: employee clock state ─────────────────────────────────
   const hasTimeIn = !!(today && (today.timeInFormatted || today.timeIn))
   const hasTimeOut = !!(today && (today.timeOutFormatted || today.timeOut))
-  const isTimeOff = !!(today && /time.?off/i.test(today.status || ''))
+  const isTimeOff = !!(today && isTimeOffStatus(today.status))
 
-  // ── Derived: range-filtered history + metrics ─────────────────────
+  // ── Derived: employee range-filtered history + metrics ─────────────
   const filtered = useMemo(() => {
     const cutoff = new Date()
     cutoff.setHours(0, 0, 0, 0)
@@ -111,6 +135,14 @@ export default function AttendanceConsole({ user, onSignOut }) {
     }
   }, [filtered])
 
+  // ── Derived: dashboard stats from today's team rows ────────────────
+  const dashStats = useMemo(() => ({
+    present: teamRows.filter((r) => isPresent(r.status)).length,
+    late: teamRows.filter((r) => isLate(r.status)).length,
+    timeOff: teamRows.filter((r) => isTimeOffStatus(r.status)).length,
+    total: teamRows.length,
+  }), [teamRows])
+
   // ── Actions ───────────────────────────────────────────────────────
   const requestOtp = useCallback(async () => {
     const res = await attendanceApi.requestOtp(lastCoords.current)
@@ -121,7 +153,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const startTimeIn = async () => {
     setNotice(null)
     setLocating(true)
-    lastCoords.current = await getCurrentLocation() // null if denied → server records "Outside/Unknown"
+    lastCoords.current = await getCurrentLocation()
     setLocating(false)
     setActing(true)
     const res = await requestOtp()
@@ -158,13 +190,18 @@ export default function AttendanceConsole({ user, onSignOut }) {
     if (res.isSuccess) { await loadMine(); if (isManager) loadTeam(teamDate) }
   }
 
-  const refresh = () => { loadMine(); if (isManager) loadTeam(teamDate) }
+  const refresh = () => {
+    loadMine()
+    if (isManager) {
+      loadTeam(teamDate)
+      if (view === 'attendance') loadAdminAtt(adminRange.days)
+    }
+  }
 
   const handleEditSchedule = (row) => {
     setEditSchedEmpId(row.employeeId)
     setShowSchedModal(true)
   }
-
   const closeSchedModal = () => { setShowSchedModal(false); setEditSchedEmpId(null) }
 
   const handleDeleteSchedule = async (row) => {
@@ -174,13 +211,12 @@ export default function AttendanceConsole({ user, onSignOut }) {
     if (res.isSuccess) loadTeam(teamDate)
   }
 
-  // ── Primary action button (varies by clock state) ─────────────────
+  // ── Primary action button — hidden entirely for Admin/HR ──────────
   const ActionButton = ({ inHeader }) => {
-    // Already marked as time off today (employees only)
-    if (isTimeOff && !isManager) {
+    if (isManager) return null
+    if (isTimeOff) {
       return <button className="btnGhost" disabled>{Icons.umbrella} Time Off</button>
     }
-    // Not clocked in yet
     if (!hasTimeIn) {
       const busy = acting || locating
       return (
@@ -189,12 +225,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
             {busy ? <span className="spinner" /> : Icons.clock}
             {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
           </button>
-          {/* Time Off is an employee-only action; admins manipulate records directly */}
-          {!isManager && (
-            <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
-              {Icons.umbrella} Time Off
-            </button>
-          )}
+          <button className="btnGhost" onClick={clockTimeOff} disabled={busy}>
+            {Icons.umbrella} Time Off
+          </button>
         </div>
       )
     }
@@ -209,7 +242,8 @@ export default function AttendanceConsole({ user, onSignOut }) {
     return <button className="btnGhost" disabled>Done for today</button>
   }
 
-  const mySchedulePanel = (
+  // My schedule panel — only for employees
+  const mySchedulePanel = !isManager && (
     <div className="panel">
       <h3 className="panel__title">My schedule</h3>
       {schedule ? (
@@ -221,17 +255,15 @@ export default function AttendanceConsole({ user, onSignOut }) {
           <div className="kv"><span className="kv__k">Work days</span><span className="kv__v">{schedule.workDays}</span></div>
         </>
       ) : (
-        <p className="alert alert--info">
-          No schedule set yet. {isManager ? 'Set one under Schedule below.' : 'Ask Admin/HR to set your schedule — clock-ins default to a 09:00 start until then.'}
-        </p>
+        <p className="alert alert--info">No schedule set yet. Ask Admin/HR to set your schedule — clock-ins default to a 09:00 start until then.</p>
       )}
     </div>
   )
 
   const VIEWS = {
-    monitoring: { title: 'Attendance monitoring', sub: 'Clock in against your schedule — verified by an emailed one-time code.' },
-    attendance: { title: 'My attendance', sub: 'Your attendance history, location and on-time rate.' },
-    schedule: { title: 'Schedule', sub: isManager ? 'Set work schedules per employee and review everyone’s.' : 'Your assigned work schedule.' },
+    monitoring: { title: isManager ? 'Dashboard' : 'Attendance monitoring', sub: isManager ? 'Today's attendance overview.' : 'Clock in against your schedule — verified by an emailed one-time code.' },
+    attendance: { title: isManager ? 'All attendance' : 'My attendance', sub: isManager ? 'Every employee's attendance records.' : 'Your attendance history, location and on-time rate.' },
+    schedule: { title: 'Schedule', sub: isManager ? 'Set work schedules per employee.' : 'Your assigned work schedule.' },
     users: { title: 'Users', sub: 'Create employee accounts and assign their role.' },
   }
 
@@ -245,10 +277,8 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   return (
     <div className="shell">
-      {/* Sidebar overlay (mobile only) */}
       {sidebarOpen && <div className="sidebarOverlay" onClick={() => setSidebarOpen(false)} />}
 
-      {/* Sidebar */}
       <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar__brand">
           <img src="/logo.svg" alt="AGLIPAY" className="brandLogo" />
@@ -257,13 +287,12 @@ export default function AttendanceConsole({ user, onSignOut }) {
             <span className="brandSub">Attendance monitoring</span>
           </div>
         </div>
-        {navItem('monitoring', Icons.monitor, 'Monitoring')}
-        {navItem('attendance', Icons.clock, 'My attendance')}
+        {navItem('monitoring', Icons.monitor, isManager ? 'Dashboard' : 'Monitoring')}
+        {navItem('attendance', Icons.clock, isManager ? 'All attendance' : 'My attendance')}
         {navItem('schedule', Icons.calendar, 'Schedule')}
         {isManager && navItem('users', Icons.users, 'Users')}
       </aside>
 
-      {/* Main */}
       <div className="main">
         <header className="topbar">
           <button className="iconBtn menuBtn" onClick={() => setSidebarOpen(o => !o)} title="Menu">
@@ -279,7 +308,6 @@ export default function AttendanceConsole({ user, onSignOut }) {
         </header>
 
         <div className="page">
-          {/* Header */}
           <div className="topRow">
             <div>
               <h1 className="pageTitle">{VIEWS[view].title}</h1>
@@ -297,43 +325,27 @@ export default function AttendanceConsole({ user, onSignOut }) {
             </p>
           )}
 
-          {/* ===================== MONITORING ===================== */}
+          {/* ===================== MONITORING / DASHBOARD ===================== */}
           {view === 'monitoring' && (
             <>
-              <div className="split">
-                <div className="panel">
-                  <h3 className="panel__title">Today · {localDateStr()}</h3>
-                  <div className="statusBig">
-                    <span className="statusBig__dot"
-                          style={{ background: hasTimeIn ? statusColor(today?.status) : 'var(--text-disabled)' }} />
-                    <div>
-                      <div className="statusBig__label">
-                        {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? 'Completed' : (today?.status || 'Clocked in')}
-                      </div>
-                      <div className="statusBig__sub">
-                        {hasTimeIn
-                          ? `In at ${today?.timeInFormatted || '—'}${hasTimeOut ? ` · Out at ${today?.timeOutFormatted}` : ''}${today?.workLocation ? ` · ${today.workLocation}` : ''}`
-                          : schedule ? `Scheduled ${schedule.startTime} — late after ${schedule.lateAfter}` : 'No schedule set'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="actions"><ActionButton /></div>
-                </div>
-
-                {mySchedulePanel}
-              </div>
-
-              {isManager && (
+              {isManager ? (
+                /* ─── Admin Dashboard ─── */
                 <>
-                  <div className="topRow" style={{ marginTop: 8 }}>
+                  <div className="topRow" style={{ marginBottom: 8 }}>
                     <div>
-                      <h1 className="pageTitle" style={{ fontSize: 18 }}>Team monitoring</h1>
-                      <p className="pageSub">Everyone’s attendance — Office vs Outside — for a given day.</p>
+                      <span className="pageSub">Showing: {teamDate}</span>
                     </div>
                     <div className="field">
-                      <label htmlFor="td">Date</label>
-                      <input id="td" type="date" className="input" value={teamDate} onChange={(e) => setTeamDate(e.target.value)} />
+                      <label htmlFor="td2">Date</label>
+                      <input id="td2" type="date" className="input" value={teamDate} onChange={(e) => setTeamDate(e.target.value)} />
                     </div>
+                  </div>
+
+                  <div className="cardsGrid">
+                    <MetricCard title="Present" value={dashStats.present} color="var(--gcp-green)" series={Array(7).fill(0).map((_, i) => i === 6 ? dashStats.present : 0)} />
+                    <MetricCard title="Late" value={dashStats.late} color="var(--gcp-yellow)" series={Array(7).fill(0).map((_, i) => i === 6 ? dashStats.late : 0)} />
+                    <MetricCard title="Time Off" value={dashStats.timeOff} color="var(--gcp-blue)" series={Array(7).fill(0).map((_, i) => i === 6 ? dashStats.timeOff : 0)} />
+                    <MetricCard title="Total records" value={dashStats.total} color="var(--text-secondary)" series={[]} />
                   </div>
 
                   <MonitoringTable
@@ -348,10 +360,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
                     }))}
                     columns={[
                       { key: 'employeeName', label: 'Employee', render: (r) => (
-                        <>
-                          <span className="statusDot" style={{ background: statusColor(r.status) }} />
-                          {r.employeeName}
-                        </>
+                        <><span className="statusDot" style={{ background: statusColor(r.status) }} />{r.employeeName}</>
                       ) },
                       { key: 'department', label: 'Dept', hideSm: true },
                       { key: 'scheduled', label: 'Schedule', hideSm: true },
@@ -365,48 +374,103 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
                   <BranchEditor onChanged={() => loadTeam(teamDate)} />
                 </>
+              ) : (
+                /* ─── Employee monitoring ─── */
+                <>
+                  <div className="split">
+                    <div className="panel">
+                      <h3 className="panel__title">Today · {localDateStr()}</h3>
+                      <div className="statusBig">
+                        <span className="statusBig__dot" style={{ background: hasTimeIn ? statusColor(today?.status) : 'var(--text-disabled)' }} />
+                        <div>
+                          <div className="statusBig__label">
+                            {isTimeOff ? 'Time Off' : !hasTimeIn ? 'Not clocked in' : hasTimeOut ? 'Completed' : (today?.status || 'Clocked in')}
+                          </div>
+                          <div className="statusBig__sub">
+                            {hasTimeIn
+                              ? `In at ${today?.timeInFormatted || '—'}${hasTimeOut ? ` · Out at ${today?.timeOutFormatted}` : ''}${today?.workLocation ? ` · ${today.workLocation}` : ''}`
+                              : schedule ? `Scheduled ${schedule.startTime} — late after ${schedule.lateAfter}` : 'No schedule set'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="actions"><ActionButton /></div>
+                    </div>
+                    {mySchedulePanel}
+                  </div>
+                </>
               )}
             </>
           )}
 
-          {/* ===================== MY ATTENDANCE ===================== */}
+          {/* ===================== ATTENDANCE ===================== */}
           {view === 'attendance' && (
             <>
-              <div className="rangeRow">
-                {RANGES.map((r) => (
-                  <button key={r.key} className={`chip ${rangeKey === r.key ? 'chip--active' : ''}`} onClick={() => setRangeKey(r.key)}>
-                    {rangeKey === r.key && '✓ '}{r.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="cardsGrid">
-                <MetricCard title="Present" value={metrics.present} color="var(--gcp-green)" series={metrics.presentSeries} />
-                <MetricCard title="Late" value={metrics.late} color="var(--gcp-yellow)" series={metrics.lateSeries} />
-                <MetricCard title="Absent" value={metrics.absent} color="var(--gcp-red)" series={metrics.absentSeries} />
-                <MetricCard title="On-time rate" value={`${metrics.rate}%`} color="var(--gcp-blue)" series={metrics.hoursSeries} />
-              </div>
-
-              <MonitoringTable
-                loading={loading}
-                emptyText="No attendance records in this range yet."
-                filterKeys={['date', 'status']}
-                rows={filtered}
-                columns={[
-                  { key: 'date', label: 'Date' },
-                  { key: 'timeIn', label: 'In' },
-                  { key: 'timeOut', label: 'Out' },
-                  { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
-                  { key: 'workLocation', label: 'Location', hideSm: true, render: (r) => locationBadge(r.workLocation) },
-                  { key: 'hoursWorked', label: 'Hrs', num: true },
-                ]}
-              />
+              {isManager ? (
+                /* ─── Admin: all employees' attendance ─── */
+                <>
+                  <div className="rangeRow">
+                    {RANGES.map((r) => (
+                      <button key={r.key} className={`chip ${adminRangeKey === r.key ? 'chip--active' : ''}`} onClick={() => setAdminRangeKey(r.key)}>
+                        {adminRangeKey === r.key && '✓ '}{r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <MonitoringTable
+                    loading={adminAttLoading}
+                    emptyText="No attendance records in this range."
+                    filterKeys={['employeeName', 'department', 'status', 'date']}
+                    rows={Array.isArray(adminAttRows) ? adminAttRows : []}
+                    columns={[
+                      { key: 'employeeName', label: 'Employee' },
+                      { key: 'department', label: 'Dept', hideSm: true },
+                      { key: 'date', label: 'Date' },
+                      { key: 'timeInFormatted', label: 'In', render: (r) => r.timeInFormatted || r.timeIn || <span className="muted">—</span> },
+                      { key: 'timeOutFormatted', label: 'Out', render: (r) => r.timeOutFormatted || r.timeOut || <span className="muted">—</span> },
+                      { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
+                      { key: 'workLocation', label: 'Location', hideSm: true, render: (r) => locationBadge(r.workLocation) },
+                      { key: 'hoursWorked', label: 'Hrs', num: true, render: (r) => r.hoursWorkedFormatted || r.hoursWorked || <span className="muted">—</span> },
+                    ]}
+                  />
+                </>
+              ) : (
+                /* ─── Employee: own attendance ─── */
+                <>
+                  <div className="rangeRow">
+                    {RANGES.map((r) => (
+                      <button key={r.key} className={`chip ${rangeKey === r.key ? 'chip--active' : ''}`} onClick={() => setRangeKey(r.key)}>
+                        {rangeKey === r.key && '✓ '}{r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="cardsGrid">
+                    <MetricCard title="Present" value={metrics.present} color="var(--gcp-green)" series={metrics.presentSeries} />
+                    <MetricCard title="Late" value={metrics.late} color="var(--gcp-yellow)" series={metrics.lateSeries} />
+                    <MetricCard title="Absent" value={metrics.absent} color="var(--gcp-red)" series={metrics.absentSeries} />
+                    <MetricCard title="On-time rate" value={`${metrics.rate}%`} color="var(--gcp-blue)" series={metrics.hoursSeries} />
+                  </div>
+                  <MonitoringTable
+                    loading={loading}
+                    emptyText="No attendance records in this range yet."
+                    filterKeys={['date', 'status']}
+                    rows={filtered}
+                    columns={[
+                      { key: 'date', label: 'Date' },
+                      { key: 'timeIn', label: 'In' },
+                      { key: 'timeOut', label: 'Out' },
+                      { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
+                      { key: 'workLocation', label: 'Location', hideSm: true, render: (r) => locationBadge(r.workLocation) },
+                      { key: 'hoursWorked', label: 'Hrs', num: true },
+                    ]}
+                  />
+                </>
+              )}
             </>
           )}
 
           {/* ===================== SCHEDULE ===================== */}
           {view === 'schedule' && (
             <>
+              {/* My schedule panel — employees only */}
               {mySchedulePanel}
 
               {isManager ? (
@@ -414,7 +478,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
                   <div className="topRow" style={{ marginTop: 8 }}>
                     <div>
                       <h1 className="pageTitle" style={{ fontSize: 18 }}>All schedules</h1>
-                      <p className="pageSub">Every employee’s active work schedule.</p>
+                      <p className="pageSub">Every employee's active work schedule.</p>
                     </div>
                     <button className="btnPrimary" onClick={() => { setEditSchedEmpId(null); setShowSchedModal(true) }}>
                       + Set schedule
@@ -448,20 +512,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
             </>
           )}
 
-          {/* ===================== USERS (Admin/HR) ===================== */}
+          {/* ===================== USERS ===================== */}
           {view === 'users' && isManager && <UserManager />}
         </div>
       </div>
 
+      {/* OTP modal */}
       {otpInfo && (
-        <OtpModal
-          info={otpInfo}
-          onVerify={verify}
-          onResend={requestOtp}
-          onClose={() => setOtpInfo(null)}
-        />
+        <OtpModal info={otpInfo} onVerify={verify} onResend={requestOtp} onClose={() => setOtpInfo(null)} />
       )}
 
+      {/* Schedule editor modal */}
       {showSchedModal && (
         <div className="modalOverlay" onClick={closeSchedModal}>
           <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
@@ -479,6 +540,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
         </div>
       )}
 
+      {/* View schedule modal */}
       {viewSched && (
         <div className="modalOverlay" onClick={() => setViewSched(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

@@ -38,6 +38,20 @@ namespace oamswlatifose.Server.Controllers
         [ProducesResponseType(typeof(ServiceResponse<List<RoleOptionDTO>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> Roles() => Ok(await _service.GetRoleOptionsAsync());
 
+        /// <summary>Updates an existing employee + linked login account (Admin/HR).</summary>
+        [HttpPut("{id:int}")]
+        [PermissionAuthorize("edit_employees")]
+        [ProducesResponseType(typeof(ServiceResponse<UserAccountSummaryDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateUserAccountDTO dto)
+        {
+            var result = await _service.UpdateAsync(id, dto);
+            if (!result.IsSuccess)
+                return BadRequest(result);
+            _logger.LogInformation("User {Id} updated by {AdminId}", id, GetCurrentUserId());
+            return Ok(result);
+        }
+
         /// <summary>Creates an employee + linked login account (Admin/HR).</summary>
         [HttpPost]
         [PermissionAuthorize("edit_employees")]

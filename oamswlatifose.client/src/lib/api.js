@@ -100,6 +100,8 @@ export const scheduleApi = {
 export const attendanceApi = {
   today: () => api.get('/attendance/my-today'),
   history: (page = 1, size = 50) => api.get(`/attendance/my-history?pageNumber=${page}&pageSize=${size}`),
+  adminAll: (startDate, endDate, page = 1, size = 200) =>
+    api.get(`/attendance/admin/all?startDate=${startDate}&endDate=${endDate}&pageNumber=${page}&pageSize=${size}`),
   // coords = { latitude, longitude } | null — used for the Office/Outside geofence check.
   requestOtp: (coords) => api.post('/attendance/clock-in/request-otp', coords || {}),
   verify: (otpCode) => api.post('/attendance/clock-in/verify', { otpCode }),
@@ -119,4 +121,5 @@ export const usersApi = {
   list: () => api.get('/users'),
   roles: () => api.get('/users/roles'),
   create: (dto) => api.post('/users', dto),
+  update: (id, dto) => api.put(`/users/${id}`, dto),
 }

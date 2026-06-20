@@ -10,6 +10,7 @@ namespace oamswlatifose.Server.Services.UserProvisioning.Interfaces
     {
         Task<ServiceResponse<List<UserAccountSummaryDTO>>> ListAsync();
         Task<ServiceResponse<UserAccountSummaryDTO>> CreateAsync(CreateUserAccountDTO dto);
+        Task<ServiceResponse<UserAccountSummaryDTO>> UpdateAsync(int id, UpdateUserAccountDTO dto);
         Task<ServiceResponse<List<RoleOptionDTO>>> GetRoleOptionsAsync();
     }
 }

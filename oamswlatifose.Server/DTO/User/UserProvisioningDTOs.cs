@@ -55,6 +55,22 @@ namespace oamswlatifose.Server.DTO.User
         public string CreatedAtFormatted { get; set; }
     }
 
+    /// <summary>Admin/HR payload to update an existing employee + login account.</summary>
+    public class UpdateUserAccountDTO
+    {
+        [MaxLength(100)] public string FirstName { get; set; }
+        [MaxLength(100)] public string LastName { get; set; }
+        [EmailAddress][MaxLength(255)] public string Email { get; set; }
+        [MaxLength(20)] public string? Phone { get; set; }
+        [MaxLength(100)] public string? Position { get; set; }
+        [MaxLength(100)] public string? Department { get; set; }
+        public int RoleId { get; set; }
+        public bool IsActive { get; set; }
+        /// <summary>Leave blank to keep the current password.</summary>
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters")]
+        public string? NewPassword { get; set; }
+    }
+
     /// <summary>A role choice for the "add user" role dropdown.</summary>
     public class RoleOptionDTO
     {
