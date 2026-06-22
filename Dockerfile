@@ -20,12 +20,22 @@ COPY oamswlatifose.Server/ ./oamswlatifose.Server/
 COPY --from=frontend /app/dist/ ./oamswlatifose.Server/wwwroot/
 
 RUN dotnet publish ./oamswlatifose.Server/oamswlatifose.Server.csproj \
-    -c Release -o /publish --no-restore
+    -c Release -o /publish --no-restore \
+    -p:DebugType=None -p:DebugSymbols=false
 
-# ── Stage 3: runtime image ───────────────────────────────────────────────────
+# ── Stage 3: obfuscate published binary ──────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS protect
+WORKDIR /protect
+COPY --from=build /publish ./in
+COPY obfuscar.xml ./
+RUN dotnet tool install --global Obfuscar.GlobalTool --version 2.2.38 \
+ && mkdir out \
+ && /root/.dotnet/tools/obfuscar.console ./obfuscar.xml
+
+# ── Stage 4: runtime image ───────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-COPY --from=build /publish .
+COPY --from=protect /protect/out .
 
 # Railway injects $PORT; fall back to 8080 for local docker run
 ENV PORT=8080

@@ -1,0 +1,27 @@
+<?xml version='1.0'?>
+<Obfuscator>
+  <!-- Input = dotnet publish output; Output = obfuscated copy -->
+  <Var name="InPath"  value="./in" />
+  <Var name="OutPath" value="./out" />
+
+  <!-- Preserve every public type/member so ASP.NET routing, EF Core column
+       mapping, JSON serialisation, AutoMapper, and FluentValidation all keep
+       working as-is. Only private/internal implementation details are renamed. -->
+  <Var name="KeepPublicApi"       value="true" />
+  <Var name="HidePrivateApi"      value="true" />
+  <Var name="RenameFields"        value="true" />
+  <Var name="RenameMethods"       value="true" />
+  <Var name="RenameEvents"        value="true" />
+
+  <!-- Rename private members to confusing Unicode look-alike characters -->
+  <Var name="UseUnicodeNames"     value="true" />
+
+  <!-- Strip PDB debug symbols from the output binary -->
+  <Var name="RegenerateDebugInfo" value="false" />
+
+  <Module file="$(InPath)/oamswlatifose.Server.dll">
+    <!-- EF Core migrations reference their own class names in snapshot metadata;
+         skip to avoid breaking the migration history. -->
+    <SkipNamespace name="oamswlatifose.Server.Migrations" />
+  </Module>
+</Obfuscator>
