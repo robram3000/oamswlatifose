@@ -51,9 +51,13 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [isOnLeave, setIsOnLeave] = useState(false)
   const [todayLeave, setTodayLeave] = useState(null) // the active EMLeaveRequest covering today
 
-  // OTP modal
+  // OTP modal — Time In
   const [otpInfo, setOtpInfo] = useState(null)
   const lastCoords = useRef(null)
+  const lastTappedAt = useRef(null)  // Unix ms captured at button tap for accurate time recording
+
+  // OTP modal — Time Out
+  const [clockOutOtpInfo, setClockOutOtpInfo] = useState(null)
 
   // Admin-verify flow
   const [verifyPending, setVerifyPending] = useState(false) // employee waiting for admin
@@ -102,6 +106,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
     const todayData = t.isSuccess ? t.data : null
     setToday(todayData)
     if (todayData?.timeIn || todayData?.timeInFormatted) setVerifyPending(false)
+    if (todayData?.timeOut || todayData?.timeOutFormatted) setClockOutOtpInfo(null)
     setHistory(h.isSuccess ? (h.data?.items ?? []) : [])
     setSchedule(s.isSuccess ? s.data : null)
 
@@ -292,19 +297,21 @@ export default function AttendanceConsole({ user, onSignOut }) {
   }), [teamRows])
 
   // ── Actions ───────────────────────────────────────────────────────
-  const requestOtp = useCallback(async () => {
-    const res = await attendanceApi.requestOtp(lastCoords.current)
+  const requestOtp = useCallback(async (extra = {}) => {
+    const body = { ...(lastCoords.current || {}), ...extra }
+    const res = await attendanceApi.requestOtp(body)
     if (res.isSuccess) setOtpInfo(res.data)
     return res
   }, [])
 
   const startTimeIn = async () => {
     setNotice(null)
+    lastTappedAt.current = Date.now() // Capture exact tap time BEFORE any async delay
     setLocating(true)
     lastCoords.current = await getCurrentLocation(3000) // 3 s max — location is optional
     setLocating(false)
     setActing(true)
-    const res = await requestOtp()
+    const res = await requestOtp({ clientTimestampMs: lastTappedAt.current })
     setActing(false)
     if (!res.isSuccess) setNotice({ type: 'error', text: res.message })
   }
@@ -321,21 +328,17 @@ export default function AttendanceConsole({ user, onSignOut }) {
     return res
   }
 
-  const startRequestVerify = async () => {
-    setNotice(null)
-    setLocating(true)
-    lastCoords.current = await getCurrentLocation(3000)
-    setLocating(false)
-    setActing(true)
-    const res = await attendanceApi.requestVerify(lastCoords.current)
-    setActing(false)
+  const requestVerifyFromModal = useCallback(async () => {
+    setOtpInfo(null)
+    const body = { ...(lastCoords.current || {}), ...(lastTappedAt.current ? { clientTimestampMs: lastTappedAt.current } : {}) }
+    const res = await attendanceApi.requestVerify(body)
     if (res.isSuccess) {
       setVerifyPending(true)
       setNotice({ type: 'ok', text: `Verification request submitted at ${res.data?.requestedTimeFormatted || 'now'} — waiting for HR/Admin approval.` })
     } else {
       setNotice({ type: 'error', text: res.message })
     }
-  }
+  }, [])
 
   const approveRequest = async (requestId) => {
     setApprovingId(requestId)
@@ -351,13 +354,30 @@ export default function AttendanceConsole({ user, onSignOut }) {
     }
   }
 
-  const clockOut = async () => {
+  const requestClockOutOtp = useCallback(async (extra = {}) => {
+    const res = await attendanceApi.requestClockOutOtp(extra)
+    if (res.isSuccess) setClockOutOtpInfo(res.data)
+    return res
+  }, [])
+
+  const startTimeOut = async () => {
     setNotice(null)
+    const tappedAt = Date.now() // Capture exact tap time BEFORE any async delay
     setActing(true)
-    const res = await attendanceApi.clockOut()
+    const res = await requestClockOutOtp({ clientTimestampMs: tappedAt })
     setActing(false)
-    setNotice({ type: res.isSuccess ? 'ok' : 'error', text: res.message || (res.isSuccess ? 'Clocked out.' : 'Clock-out failed.') })
-    if (res.isSuccess) { await loadMine(); if (isManager) loadTeam(teamDate) }
+    if (!res.isSuccess) setNotice({ type: 'error', text: res.message })
+  }
+
+  const verifyClockOut = async (code) => {
+    const res = await attendanceApi.verifyClockOut(code)
+    if (res.isSuccess) {
+      setClockOutOtpInfo(null)
+      setNotice({ type: 'ok', text: res.message || 'Clocked out.' })
+      await loadMine()
+      if (isManager) loadTeam(teamDate)
+    }
+    return res
   }
 
   const clockTimeOff = async () => {
@@ -427,10 +447,6 @@ export default function AttendanceConsole({ user, onSignOut }) {
             {busy ? <span className="spinner" /> : Icons.clock}
             {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
           </button>
-          <button className="btnGhost" onClick={startRequestVerify} disabled={busy} title="Ask HR/Admin to verify your clock-in instead of using an OTP code">
-            {busy ? <span className="spinner" /> : Icons.check}
-            {acting ? 'Submitting…' : 'Request Verify'}
-          </button>
           <button
             className="btnGhost"
             onClick={clockTimeOff}
@@ -444,9 +460,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
     }
     if (!hasTimeOut) {
       return (
-        <button className={inHeader ? 'btnGhost' : 'btnPrimary'} onClick={clockOut} disabled={acting}>
+        <button className={inHeader ? 'btnGhost' : 'btnPrimary'} onClick={startTimeOut} disabled={acting}>
           {acting ? <span className="spinner spinner--blue" /> : Icons.clock}
-          {acting ? 'Working…' : 'Time Out'}
+          {acting ? 'Sending code…' : 'Time Out'}
         </button>
       )
     }
@@ -851,9 +867,20 @@ export default function AttendanceConsole({ user, onSignOut }) {
         </div>
       </div>
 
-      {/* OTP modal */}
+      {/* Time In OTP modal */}
       {otpInfo && (
-        <OtpModal info={otpInfo} onVerify={verify} onResend={requestOtp} onClose={() => setOtpInfo(null)} />
+        <OtpModal info={otpInfo} onVerify={verify} onResend={requestOtp} onClose={() => setOtpInfo(null)} onRequestVerify={requestVerifyFromModal} />
+      )}
+
+      {/* Time Out OTP modal */}
+      {clockOutOtpInfo && (
+        <OtpModal
+          mode="timeout"
+          info={clockOutOtpInfo}
+          onVerify={verifyClockOut}
+          onResend={requestClockOutOtp}
+          onClose={() => setClockOutOtpInfo(null)}
+        />
       )}
 
       {/* Delete schedule confirmation modal */}

@@ -2,11 +2,20 @@ using System.ComponentModel.DataAnnotations;
 
 namespace oamswlatifose.Server.DTO.attendances
 {
-    /// <summary>Body for requesting a clock-in OTP — carries the employee's GPS (optional).</summary>
+    /// <summary>Body for requesting a clock-in OTP — carries the employee's GPS and client tap time (optional).</summary>
     public class RequestClockInOtpDTO
     {
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
+        /// <summary>Unix epoch ms captured on the client at the moment the button was tapped — used to record the accurate tap time even if location lookup adds delay.</summary>
+        public long? ClientTimestampMs { get; set; }
+    }
+
+    /// <summary>Body for requesting a clock-out OTP — carries the client tap time (optional).</summary>
+    public class RequestClockOutOtpDTO
+    {
+        /// <summary>Unix epoch ms captured on the client at the moment the Time Out button was tapped.</summary>
+        public long? ClientTimestampMs { get; set; }
     }
 
     /// <summary>Result of requesting an attendance OTP — what the client needs to drive the verify step.</summary>

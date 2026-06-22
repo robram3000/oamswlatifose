@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icons } from '../../lib/ui'
 
-// Modal shown after "Time In": the employee enters the code emailed to them.
+// Modal shown after "Time In" or "Time Out": the employee enters the emailed code.
+// mode: 'timein' (default) | 'timeout'
 // onVerify(code) and onResend() return the API ServiceResponse ({ isSuccess, message }).
-export default function OtpModal({ info, onVerify, onResend, onClose }) {
+export default function OtpModal({ info, onVerify, onResend, onClose, onRequestVerify, mode = 'timein' }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [resending, setResending] = useState(false)
+  const [requesting, setRequesting] = useState(false)
   const [secsLeft, setSecsLeft] = useState((info?.expiresInMinutes || 10) * 60)
   const inputRef = useRef(null)
 
@@ -36,6 +38,12 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
     // On success the parent closes the modal.
   }
 
+  const handleRequestVerify = async () => {
+    setRequesting(true)
+    await onRequestVerify()
+    setRequesting(false)
+  }
+
   const resend = async () => {
     setResending(true)
     setError('')
@@ -61,7 +69,7 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
   return (
     <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form className="modal" onSubmit={verify}>
-        <h2 className="modal__title">Verify your clock-in</h2>
+        <h2 className="modal__title">{mode === 'timeout' ? 'Verify your clock-out' : 'Verify your clock-in'}</h2>
 
         {info?.requestedTimeFormatted && (
           <div style={{
@@ -69,11 +77,15 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
             margin: '4px 0 16px',
             padding: '14px 16px',
             borderRadius: 10,
-            background: 'var(--gcp-blue-light, rgba(66,133,244,.10))',
-            border: '1px solid var(--gcp-blue, #4285f4)',
+            background: mode === 'timeout'
+              ? 'rgba(52,168,83,.10)'
+              : 'var(--gcp-blue-light, rgba(66,133,244,.10))',
+            border: mode === 'timeout'
+              ? '1px solid var(--gcp-green, #34a853)'
+              : '1px solid var(--gcp-blue, #4285f4)',
           }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--gcp-blue, #4285f4)', marginBottom: 4 }}>
-              Time In
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: mode === 'timeout' ? 'var(--gcp-green, #34a853)' : 'var(--gcp-blue, #4285f4)', marginBottom: 4 }}>
+              {mode === 'timeout' ? 'Time Out' : 'Time In'}
             </div>
             <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: 2, color: 'var(--text-primary)' }}>
               {info.requestedTimeFormatted}
@@ -94,7 +106,7 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
           </p>
         )}
 
-        {info?.workLocation && (
+        {mode !== 'timeout' && info?.workLocation && (
           <p className={`alert ${info.onSite ? 'alert--ok' : info.workLocation === 'Unknown' ? 'alert--info' : 'alert--info'}`}
              style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
             {Icons.pin}
@@ -125,17 +137,36 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
         </p>
 
         <div className="modal__actions">
-          <button type="button" className="linkBtn" onClick={resend} disabled={resending}>
+          <button type="button" className="linkBtn" onClick={resend} disabled={resending || busy || requesting}>
             {resending ? 'Resending…' : 'Resend code'}
           </button>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="btnGhost" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="btnPrimary" disabled={busy || code.length < 4}>
+            <button type="button" className="btnGhost" onClick={onClose} disabled={busy || requesting}>Cancel</button>
+            <button type="submit" className="btnPrimary" disabled={busy || requesting || code.length < 4}>
               {busy ? <span className="spinner" /> : Icons.check}
               {busy ? 'Verifying…' : 'Verify'}
             </button>
           </div>
         </div>
+
+        {mode !== 'timeout' && onRequestVerify && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0 12px' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>or</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
+            </div>
+            <button
+              type="button"
+              className="btnGhost"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={handleRequestVerify}
+              disabled={busy || resending || requesting}
+            >
+              {requesting ? <><span className="spinner" /> Submitting request…</> : <>{Icons.check} Request HR/Admin to verify instead</>}
+            </button>
+          </>
+        )}
       </form>
     </div>
   )

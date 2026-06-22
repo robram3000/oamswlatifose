@@ -78,7 +78,7 @@ namespace oamswlatifose.Server.Controllers
                         "No employee record linked to your account"));
 
                 var result = await _verificationService.RequestClockInOtpAsync(
-                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress());
+                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress(), dto?.ClientTimestampMs);
                 if (!result.IsSuccess)
                     return BadRequest(result);
 
@@ -148,7 +148,7 @@ namespace oamswlatifose.Server.Controllers
                         "No employee record linked to your account"));
 
                 var result = await _verificationService.RequestAdminVerifyAsync(
-                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress());
+                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress(), dto?.ClientTimestampMs);
 
                 return result.IsSuccess ? Ok(result) : BadRequest(result);
             }
@@ -201,6 +201,73 @@ namespace oamswlatifose.Server.Controllers
                 _logger.LogError(ex, "Error approving verify request {RequestId}", requestId);
                 return StatusCode(500, ServiceResponse<AttendanceResponseDTO>.FromException(
                     ex, "Failed to approve clock-in"));
+            }
+        }
+
+        #endregion
+
+        #region OTP-Verified Clock-Out
+
+        /// <summary>
+        /// Step 1 of the verified clock-out: captures the current time and emails a one-time
+        /// code to the employee. Clock-out is NOT recorded yet — call <see cref="VerifyClockOut"/>
+        /// with the code to commit it.
+        /// </summary>
+        [HttpPost("clock-out/request-otp")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> RequestClockOutOtp([FromBody] RequestClockOutOtpDTO dto)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _verificationService.RequestClockOutOtpAsync(
+                    employeeId, dto?.ClientTimestampMs, GetClientIpAddress());
+
+                return result.IsSuccess ? Ok(result) : BadRequest(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error requesting clock-out OTP for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceOtpRequestResultDTO>.FromException(
+                    ex, "Failed to send verification code"));
+            }
+        }
+
+        /// <summary>
+        /// Step 2 of the verified clock-out: validates the emailed code and records the clock-out.
+        /// </summary>
+        [HttpPost("clock-out/verify")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> VerifyClockOut([FromBody] VerifyAttendanceOtpDTO dto)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceResponseDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _verificationService.VerifyClockOutAsync(
+                    employeeId, dto.OtpCode, GetDeviceInfo(), GetClientIpAddress());
+
+                if (!result.IsSuccess) return BadRequest(result);
+
+                _logger.LogInformation("Employee {EmployeeId} completed OTP clock-out", employeeId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying clock-out for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceResponseDTO>.FromException(
+                    ex, "Failed to verify clock-out"));
             }
         }
 

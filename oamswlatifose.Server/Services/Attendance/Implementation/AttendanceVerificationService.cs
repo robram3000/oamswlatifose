@@ -50,7 +50,7 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
         }
 
         public async Task<ServiceResponse<AttendanceOtpRequestResultDTO>> RequestClockInOtpAsync(
-            int employeeId, double? latitude, double? longitude, string clientIp)
+            int employeeId, double? latitude, double? longitude, string clientIp, long? clientTimestampMs = null)
         {
             try
             {
@@ -93,7 +93,7 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                 foreach (var s in stale) s.IsUsed = true;
 
                 var (code, expiry) = _otpGenerator.GenerateOTPWithExpiry(OtpLength, OtpExpiryMinutes);
-                var requestedTime = DateTime.Now.TimeOfDay;
+                var requestedTime = ComputeRequestedTime(clientTimestampMs);
 
                 _db.EMAttendanceOtps.Add(new EMAttendanceOtp
                 {
@@ -264,7 +264,7 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
         }
 
         public async Task<ServiceResponse<AttendanceOtpRequestResultDTO>> RequestAdminVerifyAsync(
-            int employeeId, double? latitude, double? longitude, string clientIp)
+            int employeeId, double? latitude, double? longitude, string clientIp, long? clientTimestampMs = null)
         {
             try
             {
@@ -300,7 +300,7 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
                     .ToListAsync();
                 foreach (var s in stale) s.IsUsed = true;
 
-                var requestedTime = DateTime.Now.TimeOfDay;
+                var requestedTime = ComputeRequestedTime(clientTimestampMs);
                 var expiry = DateTime.UtcNow.AddHours(1);
 
                 _db.EMAttendanceOtps.Add(new EMAttendanceOtp
@@ -478,6 +478,169 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
             }
         }
 
+        public async Task<ServiceResponse<AttendanceOtpRequestResultDTO>> RequestClockOutOtpAsync(
+            int employeeId, long? clientTimestampMs, string clientIp)
+        {
+            try
+            {
+                var employee = await _db.EMEmployees.FirstOrDefaultAsync(e => e.Id == employeeId);
+                if (employee == null)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("No employee record linked to your account");
+
+                if (string.IsNullOrWhiteSpace(employee.Email))
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("Your employee record has no email to send the code to");
+
+                var today = DateTime.Today;
+                var todaysAttendance = await _db.EMAttendance
+                    .FirstOrDefaultAsync(a => a.EmployeeId == employeeId && a.AttendanceDate == today);
+
+                if (todaysAttendance == null || !todaysAttendance.TimeIn.HasValue)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("No clock-in record found for today. Please clock in first.");
+
+                if (todaysAttendance.TimeOut.HasValue)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("You have already clocked out today.");
+
+                // Retire any prior unused clock-out OTPs for this employee.
+                var stale = await _db.EMAttendanceOtps
+                    .Where(o => o.EmployeeId == employeeId && o.Purpose == "ClockOut" && !o.IsUsed)
+                    .ToListAsync();
+                foreach (var s in stale) s.IsUsed = true;
+
+                var (code, expiry) = _otpGenerator.GenerateOTPWithExpiry(OtpLength, OtpExpiryMinutes);
+                var requestedTime = ComputeRequestedTime(clientTimestampMs);
+
+                _db.EMAttendanceOtps.Add(new EMAttendanceOtp
+                {
+                    EmployeeId = employeeId,
+                    Email = employee.Email,
+                    Code = code,
+                    Purpose = "ClockOut",
+                    RequestedTime = requestedTime,
+                    ExpiresAt = expiry,
+                    IsUsed = false,
+                    Attempts = 0,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync();
+
+                var name = $"{employee.FirstName} {employee.LastName}".Trim();
+                var emailBody = BuildClockOutOtpEmail(name, code, OtpExpiryMinutes);
+                var emailResult = await _emailService.SendHtmlEmailAsync(
+                    employee.Email, "Your attendance clock-out code", emailBody);
+
+                if (!emailResult.IsSuccess)
+                    _logger.LogWarning("Clock-out OTP email failed for employee {EmployeeId}: {Msg}", employeeId, emailResult.Message);
+                else
+                    _logger.LogInformation("Clock-out OTP issued for employee {EmployeeId} from {Ip}", employeeId, clientIp);
+
+                return ServiceResponse<AttendanceOtpRequestResultDTO>.SuccessResult(new AttendanceOtpRequestResultDTO
+                {
+                    Sent = emailResult.IsSuccess,
+                    Message = emailResult.IsSuccess
+                        ? "Verification code sent to your email"
+                        : $"Could not send the code — {emailResult.Message}",
+                    EmailMasked = MaskEmail(employee.Email),
+                    ExpiresInMinutes = OtpExpiryMinutes,
+                    ExpiresAt = expiry,
+                    RequestedTimeFormatted = DateTime.Today.Add(requestedTime).ToString("hh:mm tt"),
+                }, emailResult.IsSuccess ? "Verification code sent" : "Email delivery failed");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error requesting clock-out OTP for employee {EmployeeId}", employeeId);
+                return ServiceResponse<AttendanceOtpRequestResultDTO>.FromException(ex, "Failed to send verification code");
+            }
+        }
+
+        public async Task<ServiceResponse<AttendanceResponseDTO>> VerifyClockOutAsync(
+            int employeeId, string otpCode, string deviceInfo, string clientIp)
+        {
+            try
+            {
+                var otp = await _db.EMAttendanceOtps
+                    .Where(o => o.EmployeeId == employeeId && o.Purpose == "ClockOut" && !o.IsUsed)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (otp == null)
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("No pending verification. Please tap Time Out to get a new code.");
+
+                if (otp.ExpiresAt < DateTime.UtcNow)
+                {
+                    otp.IsUsed = true;
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("Your code has expired. Please request a new one.");
+                }
+
+                if (otp.Attempts >= MaxAttempts)
+                {
+                    otp.IsUsed = true;
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("Too many incorrect attempts. Please request a new code.");
+                }
+
+                if (otp.Code != otpCode?.Trim())
+                {
+                    otp.Attempts++;
+                    await _db.SaveChangesAsync();
+                    var left = Math.Max(0, MaxAttempts - otp.Attempts);
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult(
+                        $"Incorrect code. {left} attempt{(left == 1 ? "" : "s")} remaining.");
+                }
+
+                otp.IsUsed = true;
+
+                var today = DateTime.Today;
+                var todaysAttendance = await _db.EMAttendance
+                    .FirstOrDefaultAsync(a => a.EmployeeId == employeeId && a.AttendanceDate == today);
+
+                if (todaysAttendance == null || !todaysAttendance.TimeIn.HasValue)
+                {
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("No clock-in record found for today. Please clock in first.");
+                }
+
+                if (todaysAttendance.TimeOut.HasValue)
+                {
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("You have already clocked out today.");
+                }
+
+                todaysAttendance.TimeOut = otp.RequestedTime;
+
+                // Compute hours worked (mirrors AttendanceService logic; standard day = 8 h)
+                var hoursRaw = (todaysAttendance.TimeOut.Value - todaysAttendance.TimeIn.Value).TotalHours;
+                todaysAttendance.HoursWorked = (decimal)Math.Max(0, hoursRaw);
+                todaysAttendance.OvertimeHours = todaysAttendance.HoursWorked > 8m
+                    ? todaysAttendance.HoursWorked - 8m : 0m;
+                todaysAttendance.Status = todaysAttendance.HoursWorked >= 8m ? "Completed"
+                    : todaysAttendance.HoursWorked >= 7m ? "Early Departure"
+                    : "Partial Day";
+
+                todaysAttendance.UpdatedAt = DateTime.UtcNow;
+                todaysAttendance.Remarks = (todaysAttendance.Remarks ?? "")
+                    + $" | Clock-out (OTP verified) via {deviceInfo ?? "Unknown device"}";
+
+                await _db.SaveChangesAsync();
+
+                todaysAttendance.Employee ??= await _db.EMEmployees.FirstOrDefaultAsync(e => e.Id == employeeId);
+
+                _logger.LogInformation("Employee {EmployeeId} clocked out (OTP) at {Time}, hours: {Hours}",
+                    employeeId, otp.RequestedTime, todaysAttendance.HoursWorked);
+
+                var dto = _mapper.Map<AttendanceResponseDTO>(todaysAttendance);
+                var hoursLabel = dto.HoursWorkedFormatted ?? (todaysAttendance.HoursWorked.HasValue
+                    ? $"{todaysAttendance.HoursWorked:F1}h" : "");
+                return ServiceResponse<AttendanceResponseDTO>.SuccessResult(dto,
+                    $"Clocked out{(hoursLabel != "" ? $" — {hoursLabel} worked" : "")}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying clock-out OTP for employee {EmployeeId}", employeeId);
+                return ServiceResponse<AttendanceResponseDTO>.FromException(ex, "Failed to verify clock-out");
+            }
+        }
+
         private static string BuildOtpEmail(string name, string code, int minutes)
         {
             return $@"
@@ -497,6 +660,36 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
             if (h < 12) return "Morning";
             if (h < 18) return "Day";
             return "Night";
+        }
+
+        private static string BuildClockOutOtpEmail(string name, string code, int minutes)
+        {
+            return $@"
+<div style=""font-family:Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;color:#202124"">
+  <h2 style=""font-weight:500"">Clock-out verification</h2>
+  <p>Hi {System.Net.WebUtility.HtmlEncode(name)},</p>
+  <p>Use this one-time code to confirm your clock-out:</p>
+  <div style=""font-size:32px;font-weight:700;letter-spacing:8px;background:#f1f3f4;
+              padding:16px;text-align:center;border-radius:8px;margin:16px 0"">{code}</div>
+  <p style=""color:#5f6368"">This code expires in {minutes} minutes. If you didn't try to clock out, you can ignore this email.</p>
+</div>";
+        }
+
+        /// <summary>
+        /// Returns the time-of-day to record as the employee's tap time.
+        /// Prefers the client-supplied Unix ms timestamp if it is within ±5 minutes of the
+        /// server clock (guards against stale or future timestamps sent by misbehaving clients).
+        /// Falls back to <see cref="DateTime.Now"/> when the client timestamp is absent or out of range.
+        /// </summary>
+        private static TimeSpan ComputeRequestedTime(long? clientTimestampMs)
+        {
+            if (clientTimestampMs.HasValue)
+            {
+                var clientLocal = DateTimeOffset.FromUnixTimeMilliseconds(clientTimestampMs.Value).LocalDateTime;
+                if (Math.Abs((DateTime.Now - clientLocal).TotalMinutes) <= 5)
+                    return clientLocal.TimeOfDay;
+            }
+            return DateTime.Now.TimeOfDay;
         }
 
         private static string MaskEmail(string email)
