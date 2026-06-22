@@ -26,6 +26,10 @@ namespace oamswlatifose.Server.Controllers
     /// <para>- Secure cryptographically random OTP generation (6-8 digits)</para>
     /// <para>- Prevention of OTP reuse after successful verification</para>
     /// <para>- IP-based tracking for suspicious activity detection</para>
+    ///
+    /// <para>License: Proprietary software by Roberto V Ramirez Jr (robram3000@gmail.com).
+    /// A valid license key is required after the 30-day trial. Day 31 and beyond will
+    /// deny all requests until a license issued by robram3000@gmail.com is activated.</para>
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]

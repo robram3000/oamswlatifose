@@ -150,3 +150,8 @@ export const workEventApi = {
   create: (dto) => api.post('/work-events', dto),
   remove: (id) => api.del(`/work-events/${id}`),
 }
+
+export const licenseApi = {
+  status: () => api.get('/license/status'),
+  activate: (licenseKey) => api.post('/license/activate', { licenseKey }),
+}

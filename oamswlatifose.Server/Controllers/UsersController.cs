@@ -10,6 +10,10 @@ namespace oamswlatifose.Server.Controllers
     /// <summary>
     /// Account provisioning for Admin/HR. Gated on employee-management permissions, which both
     /// Admin and HR have (so both can add users); the basic "User" role cannot.
+    ///
+    /// <para>License: Proprietary software by Roberto V Ramirez Jr (robram3000@gmail.com).
+    /// A valid license key is required after the 30-day trial. Day 31 and beyond will
+    /// deny all requests until a license issued by robram3000@gmail.com is activated.</para>
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
