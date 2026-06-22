@@ -130,6 +130,80 @@ namespace oamswlatifose.Server.Controllers
             }
         }
 
+        /// <summary>
+        /// Employee submits a clock-in request for HR/Admin to approve — no OTP email required.
+        /// The tap time is captured immediately and stored; the attendance row is only written
+        /// once an HR/Admin approves via <see cref="ApproveVerifyRequest"/>.
+        /// </summary>
+        [HttpPost("clock-in/request-verify")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceOtpRequestResultDTO>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> RequestAdminVerify([FromBody] RequestClockInOtpDTO dto)
+        {
+            try
+            {
+                var employeeId = GetEmployeeIdForCurrentUser();
+                if (employeeId == 0)
+                    return BadRequest(ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
+                        "No employee record linked to your account"));
+
+                var result = await _verificationService.RequestAdminVerifyAsync(
+                    employeeId, dto?.Latitude, dto?.Longitude, GetClientIpAddress());
+
+                return result.IsSuccess ? Ok(result) : BadRequest(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error submitting admin-verify request for user {UserId}", GetCurrentUserId());
+                return StatusCode(500, ServiceResponse<AttendanceOtpRequestResultDTO>.FromException(
+                    ex, "Failed to submit verification request"));
+            }
+        }
+
+        /// <summary>Returns all pending admin-verify clock-in requests (HR/Admin only).</summary>
+        [HttpGet("clock-in/pending-requests")]
+        [PermissionAuthorize("view_attendance")]
+        [ProducesResponseType(typeof(ServiceResponse<List<PendingVerifyRequestDTO>>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPendingVerifyRequests()
+        {
+            try
+            {
+                var result = await _verificationService.GetPendingVerifyRequestsAsync();
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching pending verify requests");
+                return StatusCode(500, ServiceResponse<List<PendingVerifyRequestDTO>>.FromException(
+                    ex, "Failed to load pending requests"));
+            }
+        }
+
+        /// <summary>HR/Admin approves a pending clock-in request — records attendance with the employee's original tap time.</summary>
+        [HttpPost("clock-in/approve/{requestId:int}")]
+        [PermissionAuthorize("view_attendance")]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ServiceResponse<AttendanceResponseDTO>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ApproveVerifyRequest(int requestId)
+        {
+            try
+            {
+                var result = await _verificationService.ApproveVerifyRequestAsync(
+                    requestId, GetDeviceInfo(), GetClientIpAddress());
+
+                if (!result.IsSuccess) return BadRequest(result);
+
+                _logger.LogInformation("Admin {AdminId} approved clock-in request {RequestId}", GetCurrentUserId(), requestId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error approving verify request {RequestId}", requestId);
+                return StatusCode(500, ServiceResponse<AttendanceResponseDTO>.FromException(
+                    ex, "Failed to approve clock-in"));
+            }
+        }
+
         #endregion
 
         #region Employee Self-Service Endpoints

@@ -263,6 +263,221 @@ namespace oamswlatifose.Server.Services.Attendance.Implementation
             }
         }
 
+        public async Task<ServiceResponse<AttendanceOtpRequestResultDTO>> RequestAdminVerifyAsync(
+            int employeeId, double? latitude, double? longitude, string clientIp)
+        {
+            try
+            {
+                var employee = await _db.EMEmployees.FirstOrDefaultAsync(e => e.Id == employeeId);
+                if (employee == null)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("No employee record linked to your account");
+
+                var today = DateTime.Today;
+                var existing = await _db.EMAttendance
+                    .FirstOrDefaultAsync(a => a.EmployeeId == employeeId && a.AttendanceDate == today);
+                if (existing != null && existing.TimeIn.HasValue)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult("You have already clocked in today");
+
+                var closedEvent = await _db.EMWorkEvents
+                    .FirstOrDefaultAsync(e => e.Date == today && e.EventType == "Closed");
+                if (closedEvent != null)
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(
+                        $"Attendance is closed for today ({closedEvent.Name}). Contact HR if this is an error.");
+
+                var loc = await _branchService.ResolveAsync(latitude, longitude);
+
+                if (_branchService.RequireOnSite && !loc.OnSite)
+                {
+                    var why = loc.WorkLocation == "Unknown"
+                        ? "Location is required to clock in. Please enable location access and try again."
+                        : "You must be within an office branch to clock in.";
+                    return ServiceResponse<AttendanceOtpRequestResultDTO>.FailureResult(why);
+                }
+
+                // Retire any prior pending admin-verify requests for this employee.
+                var stale = await _db.EMAttendanceOtps
+                    .Where(o => o.EmployeeId == employeeId && o.Purpose == "ClockInAdminVerify" && !o.IsUsed)
+                    .ToListAsync();
+                foreach (var s in stale) s.IsUsed = true;
+
+                var requestedTime = DateTime.Now.TimeOfDay;
+                var expiry = DateTime.UtcNow.AddHours(1);
+
+                _db.EMAttendanceOtps.Add(new EMAttendanceOtp
+                {
+                    EmployeeId = employeeId,
+                    Email = employee.Email ?? "",
+                    Code = "ADMIN",
+                    Purpose = "ClockInAdminVerify",
+                    RequestedTime = requestedTime,
+                    Latitude = latitude,
+                    Longitude = longitude,
+                    WorkLocation = loc.WorkLocation,
+                    BranchId = loc.BranchId,
+                    ExpiresAt = expiry,
+                    IsUsed = false,
+                    Attempts = 0,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("Admin-verify clock-in request submitted for employee {EmployeeId} from {Ip}", employeeId, clientIp);
+
+                return ServiceResponse<AttendanceOtpRequestResultDTO>.SuccessResult(new AttendanceOtpRequestResultDTO
+                {
+                    Sent = true,
+                    Message = "Request submitted — waiting for HR/Admin to verify",
+                    RequestedTimeFormatted = DateTime.Today.Add(requestedTime).ToString("hh:mm tt"),
+                    WorkLocation = loc.WorkLocation,
+                    BranchName = loc.BranchName,
+                    OnSite = loc.OnSite,
+                    DistanceMeters = loc.DistanceMeters
+                }, "Verification request submitted");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error submitting admin-verify request for employee {EmployeeId}", employeeId);
+                return ServiceResponse<AttendanceOtpRequestResultDTO>.FromException(ex, "Failed to submit verification request");
+            }
+        }
+
+        public async Task<ServiceResponse<List<PendingVerifyRequestDTO>>> GetPendingVerifyRequestsAsync()
+        {
+            try
+            {
+                var pending = await _db.EMAttendanceOtps
+                    .Where(o => o.Purpose == "ClockInAdminVerify" && !o.IsUsed && o.ExpiresAt > DateTime.UtcNow)
+                    .OrderBy(o => o.CreatedAt)
+                    .ToListAsync();
+
+                var employeeIds = pending.Select(p => p.EmployeeId).Distinct().ToList();
+                var employees = await _db.EMEmployees
+                    .Where(e => employeeIds.Contains(e.Id))
+                    .ToListAsync();
+
+                var branchIds = pending.Where(p => p.BranchId.HasValue).Select(p => p.BranchId!.Value).Distinct().ToList();
+                var branches = await _db.EMBranches
+                    .Where(b => branchIds.Contains(b.Id))
+                    .ToDictionaryAsync(b => b.Id, b => b.Name);
+
+                var result = pending.Select(p =>
+                {
+                    var emp = employees.FirstOrDefault(e => e.Id == p.EmployeeId);
+                    return new PendingVerifyRequestDTO
+                    {
+                        RequestId = p.Id,
+                        EmployeeId = p.EmployeeId,
+                        EmployeeName = emp != null ? $"{emp.FirstName} {emp.LastName}".Trim() : $"Employee #{p.EmployeeId}",
+                        Department = emp?.Department ?? "",
+                        RequestedTimeFormatted = DateTime.Today.Add(p.RequestedTime).ToString("hh:mm tt"),
+                        WorkLocation = p.WorkLocation ?? "Unknown",
+                        BranchName = p.BranchId.HasValue && branches.TryGetValue(p.BranchId.Value, out var bn) ? bn : null,
+                        OnSite = p.WorkLocation == "Office",
+                        RequestedAt = p.CreatedAt
+                    };
+                }).ToList();
+
+                return ServiceResponse<List<PendingVerifyRequestDTO>>.SuccessResult(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching pending verify requests");
+                return ServiceResponse<List<PendingVerifyRequestDTO>>.FromException(ex, "Failed to load pending requests");
+            }
+        }
+
+        public async Task<ServiceResponse<AttendanceResponseDTO>> ApproveVerifyRequestAsync(
+            int requestId, string approverInfo, string clientIp)
+        {
+            try
+            {
+                var request = await _db.EMAttendanceOtps
+                    .FirstOrDefaultAsync(o => o.Id == requestId && o.Purpose == "ClockInAdminVerify" && !o.IsUsed);
+
+                if (request == null)
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("Request not found or already processed");
+
+                if (request.ExpiresAt < DateTime.UtcNow)
+                {
+                    request.IsUsed = true;
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("This request has expired");
+                }
+
+                var today = DateTime.Today;
+                var existingAttendance = await _db.EMAttendance
+                    .FirstOrDefaultAsync(a => a.EmployeeId == request.EmployeeId && a.AttendanceDate == today);
+                if (existingAttendance != null && existingAttendance.TimeIn.HasValue)
+                {
+                    request.IsUsed = true;
+                    await _db.SaveChangesAsync();
+                    return ServiceResponse<AttendanceResponseDTO>.FailureResult("Employee has already clocked in today");
+                }
+
+                request.IsUsed = true;
+
+                var schedule = await _scheduleService.GetEntityAsync(request.EmployeeId);
+                var status = _scheduleService.ComputeStatus(schedule, request.RequestedTime);
+                var locationNote = request.WorkLocation == "Office" ? "Office"
+                    : request.WorkLocation == "Outside" ? "Off-site" : "Unknown location";
+
+                EMAttendance attendance;
+                if (existingAttendance != null)
+                {
+                    existingAttendance.TimeIn = request.RequestedTime;
+                    existingAttendance.Status = status;
+                    existingAttendance.Shift = DetermineShift(request.RequestedTime);
+                    existingAttendance.WorkLocation = request.WorkLocation;
+                    existingAttendance.BranchId = request.BranchId;
+                    existingAttendance.Latitude = request.Latitude;
+                    existingAttendance.Longitude = request.Longitude;
+                    existingAttendance.UpdatedAt = DateTime.UtcNow;
+                    existingAttendance.Remarks = $"Clock-in (Admin verified, {locationNote}) via {approverInfo ?? "Admin"}";
+                    attendance = existingAttendance;
+                }
+                else
+                {
+                    attendance = new EMAttendance
+                    {
+                        EmployeeId = request.EmployeeId,
+                        AttendanceDate = today,
+                        TimeIn = request.RequestedTime,
+                        Status = status,
+                        Shift = DetermineShift(request.RequestedTime),
+                        WorkLocation = request.WorkLocation,
+                        BranchId = request.BranchId,
+                        Latitude = request.Latitude,
+                        Longitude = request.Longitude,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        Remarks = $"Clock-in (Admin verified, {locationNote}) via {approverInfo ?? "Admin"}"
+                    };
+                    _db.EMAttendance.Add(attendance);
+                }
+
+                await _db.SaveChangesAsync();
+
+                attendance.Employee ??= await _db.EMEmployees.FirstOrDefaultAsync(e => e.Id == request.EmployeeId);
+
+                _logger.LogInformation("Admin approved clock-in for employee {EmployeeId} at {Time} → {Status}",
+                    request.EmployeeId, request.RequestedTime, status);
+
+                var dto = _mapper.Map<AttendanceResponseDTO>(attendance);
+                if (request.BranchId.HasValue)
+                    dto.BranchName = (await _db.EMBranches.FirstOrDefaultAsync(b => b.Id == request.BranchId))?.Name;
+
+                var locSuffix = request.WorkLocation == "Office" && dto.BranchName != null ? $" at {dto.BranchName}"
+                    : request.WorkLocation == "Outside" ? " (off-site)" : "";
+                return ServiceResponse<AttendanceResponseDTO>.SuccessResult(dto,
+                    (status == "Late" ? "Clocked in — marked Late" : "Clocked in — On time") + locSuffix);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error approving verify request {RequestId}", requestId);
+                return ServiceResponse<AttendanceResponseDTO>.FromException(ex, "Failed to approve clock-in");
+            }
+        }
+
         private static string BuildOtpEmail(string name, string code, int minutes)
         {
             return $@"

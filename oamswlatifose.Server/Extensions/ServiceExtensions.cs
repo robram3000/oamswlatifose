@@ -250,7 +250,6 @@ namespace oamswlatifose.Server.Extensions
                 opts.FromEmail = configuration["EmailSettings:Sender:EmailAddress"] ?? smtp["UserName"];
                 opts.FromName = configuration["EmailSettings:Sender:DisplayName"] ?? "Attendance";
                 opts.TimeoutMs = int.TryParse(smtp["Timeout"], out var ms) ? ms : 15000;
-                opts.ResendApiKey = configuration["EmailSettings:ResendApiKey"];
 
                 // No tracking pixel host is configured, so keep tracking off (avoids broken pixels).
                 opts.EnableTracking = false;

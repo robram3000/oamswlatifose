@@ -35,7 +35,6 @@ namespace oamswlatifose.Server.Services.Email.Implementation
         private readonly EmailSettings _settings;
         private static readonly SemaphoreSlim _throttler = new SemaphoreSlim(10, 10);
         private static readonly Dictionary<string, Queue<DateTime>> _rateLimitTracker = new();
-        private static readonly HttpClient _http = new();
 
         /// <summary>
         /// Email service configuration settings
@@ -55,7 +54,6 @@ namespace oamswlatifose.Server.Services.Email.Implementation
             public int MaxEmailsPerDay { get; set; } = 5000;
             public int RateLimitPerRecipient { get; set; } = 20;
             public int TimeoutMs { get; set; } = 15000;
-            public string ResendApiKey { get; set; }
             public string BaseUrl { get; set; }
             public string TrackingPixelUrl { get; set; }
             public string UnsubscribeUrl { get; set; }
@@ -865,66 +863,7 @@ namespace oamswlatifose.Server.Services.Email.Implementation
             if (!await CheckRateLimitAsync(to))
                 return ServiceResponse<EmailSendResultDTO>.FailureResult("Rate limit exceeded for this recipient. Please try again later.");
 
-            // Prefer Resend when a key is configured (required on Railway which blocks SMTP).
-            // Fall back to SMTP on any Resend failure (e.g. unverified domain / sandbox restriction).
-            if (!string.IsNullOrWhiteSpace(_settings.ResendApiKey))
-            {
-                var resendResult = await SendViaResendAsync(to, subject, body, isHtml);
-                if (resendResult.IsSuccess) return resendResult;
-
-                _logger.LogWarning("Resend failed ({Msg}); falling back to SMTP", resendResult.Message);
-            }
-
             return await SendViaSmtpAsync(to, subject, body, isHtml, attachments);
-        }
-
-        private async Task<ServiceResponse<EmailSendResultDTO>> SendViaResendAsync(
-            string to, string subject, string body, bool isHtml)
-        {
-            try
-            {
-                var trackingId = GenerateTrackingId();
-                var htmlBody = isHtml ? body : null;
-                var textBody = isHtml ? StripHtml(body) : body;
-
-                var payload = System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    from = $"{_settings.FromName} <{_settings.FromEmail}>",
-                    to = new[] { to },
-                    subject,
-                    html = htmlBody,
-                    text = textBody,
-                });
-
-                using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
-                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.ResendApiKey);
-                req.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-
-                using var resp = await _http.SendAsync(req);
-                var respBody = await resp.Content.ReadAsStringAsync();
-
-                if (!resp.IsSuccessStatusCode)
-                {
-                    _logger.LogError("Resend API {Status}: {Body}", (int)resp.StatusCode, respBody);
-                    await LogEmailSend(to, subject, trackingId, false, $"Resend {resp.StatusCode}");
-                    return ServiceResponse<EmailSendResultDTO>.FailureResult($"Email delivery failed ({resp.StatusCode}): {respBody}");
-                }
-
-                await LogEmailSend(to, subject, trackingId, true, null);
-                _logger.LogInformation("Email sent via Resend to {To} ({TrackingId})", to, trackingId);
-
-                return ServiceResponse<EmailSendResultDTO>.SuccessResult(new EmailSendResultDTO
-                {
-                    TrackingId = trackingId, To = to, Subject = subject,
-                    SentAt = DateTime.UtcNow, Status = "Sent",
-                }, "Email sent successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Resend error sending to {To}", to);
-                await LogEmailSend(to, subject, null, false, ex.Message);
-                return ServiceResponse<EmailSendResultDTO>.FailureResult($"Failed to send email: {ex.Message}");
-            }
         }
 
         private async Task<ServiceResponse<EmailSendResultDTO>> SendViaSmtpAsync(
@@ -935,7 +874,8 @@ namespace oamswlatifose.Server.Services.Email.Implementation
                 var trackingId = GenerateTrackingId();
 
                 var message = new MimeMessage();
-                message.From.Add(new MailboxAddress(_settings.FromName, _settings.FromEmail));
+                var smtpFrom = !string.IsNullOrEmpty(_settings.SmtpUsername) ? _settings.SmtpUsername : _settings.FromEmail;
+                message.From.Add(new MailboxAddress(_settings.FromName, smtpFrom));
                 message.To.Add(new MailboxAddress("", to));
                 message.Subject = subject;
 

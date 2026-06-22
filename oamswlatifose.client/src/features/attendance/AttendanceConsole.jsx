@@ -55,6 +55,12 @@ export default function AttendanceConsole({ user, onSignOut }) {
   const [otpInfo, setOtpInfo] = useState(null)
   const lastCoords = useRef(null)
 
+  // Admin-verify flow
+  const [verifyPending, setVerifyPending] = useState(false) // employee waiting for admin
+  const [pendingRequests, setPendingRequests] = useState([])
+  const [pendingLoading, setPendingLoading] = useState(false)
+  const [approvingId, setApprovingId] = useState(null)
+
   // Manager-only
   const [teamDate, setTeamDate] = useState(localDateStr())
   const [teamRows, setTeamRows] = useState([])
@@ -93,7 +99,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
       scheduleApi.mine(),
       leaveApi.mine(),
     ])
-    setToday(t.isSuccess ? t.data : null)
+    const todayData = t.isSuccess ? t.data : null
+    setToday(todayData)
+    if (todayData?.timeIn || todayData?.timeInFormatted) setVerifyPending(false)
     setHistory(h.isSuccess ? (h.data?.items ?? []) : [])
     setSchedule(s.isSuccess ? s.data : null)
 
@@ -131,6 +139,14 @@ export default function AttendanceConsole({ user, onSignOut }) {
     setAdminAttRows(res.isSuccess ? (res.data?.items ?? res.data ?? []) : [])
     setAdminAttLoading(false)
   }, [])
+
+  const loadPending = useCallback(async () => {
+    if (!isManager) return
+    setPendingLoading(true)
+    const res = await attendanceApi.pendingRequests()
+    setPendingRequests(res.isSuccess ? (res.data ?? []) : [])
+    setPendingLoading(false)
+  }, [isManager])
 
   const loadDashTrend = useCallback(async () => {
     if (!isManager) return
@@ -207,6 +223,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
 
   useEffect(() => { loadMine() }, [loadMine])
   useEffect(() => { if (isManager) loadTeam(teamDate) }, [isManager, teamDate, loadTeam])
+  useEffect(() => { if (isManager) loadPending() }, [isManager, loadPending])
   useEffect(() => {
     if (isManager && view === 'attendance') loadAdminAtt(adminRange.days)
   }, [isManager, view, adminRangeKey, loadAdminAtt, adminRange.days])
@@ -296,11 +313,42 @@ export default function AttendanceConsole({ user, onSignOut }) {
     const res = await attendanceApi.verify(code)
     if (res.isSuccess) {
       setOtpInfo(null)
+      setVerifyPending(false)
       setNotice({ type: 'ok', text: res.message || 'Clocked in.' })
       await loadMine()
       if (isManager) loadTeam(teamDate)
     }
     return res
+  }
+
+  const startRequestVerify = async () => {
+    setNotice(null)
+    setLocating(true)
+    lastCoords.current = await getCurrentLocation(3000)
+    setLocating(false)
+    setActing(true)
+    const res = await attendanceApi.requestVerify(lastCoords.current)
+    setActing(false)
+    if (res.isSuccess) {
+      setVerifyPending(true)
+      setNotice({ type: 'ok', text: `Verification request submitted at ${res.data?.requestedTimeFormatted || 'now'} — waiting for HR/Admin approval.` })
+    } else {
+      setNotice({ type: 'error', text: res.message })
+    }
+  }
+
+  const approveRequest = async (requestId) => {
+    setApprovingId(requestId)
+    const res = await attendanceApi.approveRequest(requestId)
+    setApprovingId(null)
+    if (res.isSuccess) {
+      setNotice({ type: 'ok', text: res.message || 'Clock-in approved.' })
+      loadPending()
+      loadTeam(teamDate)
+    } else {
+      setNotice({ type: 'error', text: res.message || 'Approval failed.' })
+      loadPending()
+    }
   }
 
   const clockOut = async () => {
@@ -325,6 +373,7 @@ export default function AttendanceConsole({ user, onSignOut }) {
     loadMine()
     if (isManager) {
       loadTeam(teamDate)
+      loadPending()
       if (view === 'monitoring') loadDashTrend()
       if (view === 'attendance') loadAdminAtt(adminRange.days)
     }
@@ -365,11 +414,22 @@ export default function AttendanceConsole({ user, onSignOut }) {
     if (!hasTimeIn) {
       const busy = acting || locating
       const endLabel = schedule?.endTime ? schedule.endTime.slice(0, 5) : null
+      if (verifyPending) {
+        return (
+          <button className="btnGhost" disabled>
+            <span className="spinner spinner--blue" /> Waiting for approval…
+          </button>
+        )
+      }
       return (
         <div className="actionBtns">
           <button className="btnPrimary" onClick={startTimeIn} disabled={busy}>
             {busy ? <span className="spinner" /> : Icons.clock}
             {locating ? 'Locating…' : acting ? 'Sending code…' : 'Time In'}
+          </button>
+          <button className="btnGhost" onClick={startRequestVerify} disabled={busy} title="Ask HR/Admin to verify your clock-in instead of using an OTP code">
+            {busy ? <span className="spinner" /> : Icons.check}
+            {acting ? 'Submitting…' : 'Request Verify'}
           </button>
           <button
             className="btnGhost"
@@ -544,6 +604,57 @@ export default function AttendanceConsole({ user, onSignOut }) {
                       { key: 'hoursWorkedFormatted', label: 'Hrs', num: true, render: (r) => r.hoursWorkedFormatted || <span className="muted">—</span> },
                     ]}
                   />
+
+                  {/* ── Pending verification requests ── */}
+                  <div className="panel" style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <div>
+                        <h3 className="panel__title" style={{ margin: 0 }}>
+                          Pending verifications
+                          {pendingRequests.length > 0 && (
+                            <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 12, background: 'var(--gcp-red)', color: '#fff', fontSize: 11, fontWeight: 700 }}>
+                              {pendingRequests.length}
+                            </span>
+                          )}
+                        </h3>
+                        <p className="pageSub" style={{ marginTop: 2 }}>Employees waiting for clock-in approval.</p>
+                      </div>
+                      <button className="iconBtn" onClick={loadPending} title="Refresh">{Icons.refresh}</button>
+                    </div>
+                    {pendingLoading ? (
+                      <p className="muted" style={{ fontSize: 13 }}>Loading…</p>
+                    ) : pendingRequests.length === 0 ? (
+                      <p className="muted" style={{ fontSize: 13 }}>No pending requests.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {pendingRequests.map((req) => (
+                          <div key={req.requestId} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            flexWrap: 'wrap', gap: 10, padding: '10px 14px',
+                            border: '1px solid var(--border-color)', borderRadius: 8,
+                            background: 'var(--surface)'
+                          }}>
+                            <div style={{ flex: 1, minWidth: 180 }}>
+                              <div style={{ fontWeight: 600, fontSize: 14 }}>{req.employeeName}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                {req.department && <span style={{ marginRight: 8 }}>{req.department}</span>}
+                                Requested at <strong>{req.requestedTimeFormatted}</strong>
+                                {req.workLocation && <span style={{ marginLeft: 8 }}>{req.onSite ? `· ${req.branchName || 'Office'}` : `· ${req.workLocation}`}</span>}
+                              </div>
+                            </div>
+                            <button
+                              className="btnPrimary"
+                              style={{ fontSize: 13, padding: '6px 16px' }}
+                              onClick={() => approveRequest(req.requestId)}
+                              disabled={approvingId === req.requestId}
+                            >
+                              {approvingId === req.requestId ? <><span className="spinner" /> Approving…</> : `${Icons.check} Approve`}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <BranchEditor onChanged={() => loadTeam(teamDate)} />
 

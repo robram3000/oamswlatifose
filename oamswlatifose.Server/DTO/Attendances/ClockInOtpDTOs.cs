@@ -35,4 +35,18 @@ namespace oamswlatifose.Server.DTO.attendances
         [RegularExpression(@"^\d{4,8}$", ErrorMessage = "Code must be 4–8 digits")]
         public string OtpCode { get; set; }
     }
+
+    /// <summary>A pending admin-verify clock-in request visible to HR/Admin.</summary>
+    public class PendingVerifyRequestDTO
+    {
+        public int RequestId { get; set; }
+        public int EmployeeId { get; set; }
+        public string EmployeeName { get; set; }
+        public string Department { get; set; }
+        public string RequestedTimeFormatted { get; set; }
+        public string WorkLocation { get; set; }
+        public string BranchName { get; set; }
+        public bool OnSite { get; set; }
+        public DateTime RequestedAt { get; set; }
+    }
 }
