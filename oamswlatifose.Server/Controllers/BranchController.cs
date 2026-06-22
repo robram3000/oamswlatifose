@@ -10,6 +10,10 @@ namespace oamswlatifose.Server.Controllers
     /// <summary>
     /// Office/branch geofences. Any signed-in user can list them (the clock-in UI needs them);
     /// only Admin/Manager can create, update, or delete.
+    ///
+    /// <para>License: Proprietary software by Roberto V Ramirez Jr (robram3000@gmail.com).
+    /// A valid license key is required after the 30-day trial. Day 31 and beyond will
+    /// deny all requests until a license issued by robram3000@gmail.com is activated.</para>
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]

@@ -10,6 +10,10 @@ namespace oamswlatifose.Server.Controllers
     /// <summary>
     /// Work-schedule management. The scheduled start time + grace window is what attendance
     /// is graded against, so this is the "set the schedule time" side of the feature.
+    ///
+    /// <para>License: Proprietary software by Roberto V Ramirez Jr (robram3000@gmail.com).
+    /// A valid license key is required after the 30-day trial. Day 31 and beyond will
+    /// deny all requests until a license issued by robram3000@gmail.com is activated.</para>
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]

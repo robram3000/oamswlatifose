@@ -347,6 +347,12 @@ ASALocalRun/
 # MFractors (Xamarin productivity tool) working folder
 .mfractor/
 
+# License state — deployment-specific, must not be committed
+license_state.json
+
+# License private key — never commit this
+Tools/PrivateKey.pem
+
 # Local History for Visual Studio
 .localhistory/
 

@@ -8,6 +8,14 @@ using oamswlatifose.Server.Services;
 
 namespace oamswlatifose.Server.Controllers
 {
+    /// <summary>
+    /// API controller for employee leave request operations.
+    /// Provides endpoints for submitting, reviewing, and managing leave requests.
+    ///
+    /// <para>License: Proprietary software by Roberto V Ramirez Jr (robram3000@gmail.com).
+    /// A valid license key is required after the 30-day trial. Day 31 and beyond will
+    /// deny all requests until a license issued by robram3000@gmail.com is activated.</para>
+    /// </summary>
     [ApiController]
     [Route("api/leave")]
     [Authorize]
