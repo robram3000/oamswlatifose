@@ -62,12 +62,30 @@ export default function OtpModal({ info, onVerify, onResend, onClose }) {
     <div className="overlay" role="dialog" aria-modal="true" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form className="modal" onSubmit={verify}>
         <h2 className="modal__title">Verify your clock-in</h2>
+
+        {info?.requestedTimeFormatted && (
+          <div style={{
+            textAlign: 'center',
+            margin: '4px 0 16px',
+            padding: '14px 16px',
+            borderRadius: 10,
+            background: 'var(--gcp-blue-light, rgba(66,133,244,.10))',
+            border: '1px solid var(--gcp-blue, #4285f4)',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--gcp-blue, #4285f4)', marginBottom: 4 }}>
+              Time In
+            </div>
+            <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: 2, color: 'var(--text-primary)' }}>
+              {info.requestedTimeFormatted}
+            </div>
+          </div>
+        )}
+
         <p className="modal__sub">
           <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 6 }}>{Icons.mail}</span>
           {emailFailed
             ? <>Email delivery failed for <strong>{info?.emailMasked || 'your email'}</strong>.</>
             : <>We emailed a code to <strong>{info?.emailMasked || 'your email'}</strong>.</>}
-          {info?.requestedTimeFormatted && <> Time-in captured at <strong>{info.requestedTimeFormatted}</strong>.</>}
         </p>
 
         {emailFailed && (
