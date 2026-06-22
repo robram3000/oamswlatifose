@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using oamswlatifose.Server.Extensions;
+using oamswlatifose.Server.Middleware;
 using oamswlatifose.Server.Model;
 using oamswlatifose.Server.Services.Email;
 
@@ -34,6 +35,7 @@ builder.Services.AddHealthChecks(builder.Configuration);
 builder.Services.AddCustomResponseCaching();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddLicensing();
 var app = builder.Build();
 
 // Apply migrations on every startup — runs before any request is served.
@@ -57,8 +59,9 @@ await app.SeedDevAsync();
 
 if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
-app.UseCors("DefaultCorsPolicy"); 
-app.UseAuthentication(); 
+app.UseCors("DefaultCorsPolicy");
+app.UseMiddleware<LicenseMiddleware>();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");

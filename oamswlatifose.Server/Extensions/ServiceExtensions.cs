@@ -9,6 +9,7 @@ using oamswlatifose.Server.DTO.attendances;
 using oamswlatifose.Server.DTO.Employee;
 using oamswlatifose.Server.DTO.Role;
 using oamswlatifose.Server.DTO.User;
+using oamswlatifose.Server.Licensing;
 using oamswlatifose.Server.MappingProfiles;
 using oamswlatifose.Server.Middleware;
 using oamswlatifose.Server.Model;
@@ -316,8 +317,8 @@ namespace oamswlatifose.Server.Extensions
                     Description = "Comprehensive API for employee management, attendance tracking, and authentication",
                     Contact = new OpenApiContact
                     {
-                        Name = "Support Team",
-                        Email = "support@ems.com"
+                        Name = "Roberto V Ramirez Jr",
+                        Email = "robram3000@gmail.com"
                     }
                 });
 
@@ -380,6 +381,17 @@ namespace oamswlatifose.Server.Extensions
                 options.UseCaseSensitivePaths = false;
             });
 
+            return services;
+        }
+
+        /// <summary>
+        /// Registers license enforcement services.
+        /// </summary>
+        public static IServiceCollection AddLicensing(this IServiceCollection services)
+        {
+            services.AddMemoryCache();
+            services.AddSingleton<ILicensePersistence, LicensePersistence>();
+            services.AddSingleton<ILicenseService, LicenseService>();
             return services;
         }
     }
