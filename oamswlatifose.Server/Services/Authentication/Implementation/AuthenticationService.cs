@@ -190,6 +190,11 @@ namespace oamswlatifose.Server.Services.Authentication.Implementation
 
                     // Prepare response
                     var userDto = _mapper.Map<UserResponseDTO>(user);
+                    // ValidateUserCredentialsAsync doesn't eager-load user.Role, so RoleName would
+                    // map to null — set it explicitly from the role we already loaded above, otherwise
+                    // the client can't tell Admin/HR apart and never shows the management views.
+                    userDto.RoleId = role.Id;
+                    userDto.RoleName = role.RoleName;
                     userDto.RolePermissions = _mapper.Map<Dictionary<string, bool>>(role);
 
                     var response = new LoginResponseDTO
