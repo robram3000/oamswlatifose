@@ -57,13 +57,19 @@ namespace oamswlatifose.Server.Extensions
                         .FirstOrDefaultAsync(u => u.Username == a.Username);
                     if (existing != null)
                     {
-                        if (existing.FailedLoginAttempts > 0 || existing.LockoutEnd.HasValue)
-                        {
-                            existing.FailedLoginAttempts = 0;
-                            existing.LockoutEnd = null;
-                            await db.SaveChangesAsync();
-                            logger.LogInformation("Seed account '{User}' lockout cleared.", a.Username);
-                        }
+                        // These are fixed demo accounts with documented credentials. Re-assert the
+                        // password, role, and active flag every startup so the published demo logins
+                        // (admin/hr/user · Demo@123) always work — even on a persistent DB whose
+                        // accounts were seeded by an older build. Also clears any lockout streak.
+                        var (rehash, resalt) = PasswordHasher.HashPassword(DemoPassword);
+                        existing.PasswordHash = rehash;
+                        existing.PasswordSalt = resalt;
+                        existing.RoleId = a.RoleId;
+                        existing.IsActive = true;
+                        existing.FailedLoginAttempts = 0;
+                        existing.LockoutEnd = null;
+                        await db.SaveChangesAsync();
+                        logger.LogInformation("Seed account '{User}' reset to demo defaults (password/role/lockout).", a.Username);
                         continue;
                     }
 

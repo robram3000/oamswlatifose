@@ -154,4 +154,6 @@ export const workEventApi = {
 export const licenseApi = {
   status: () => api.get('/license/status'),
   activate: (licenseKey) => api.post('/license/activate', { licenseKey }),
+  // durationKey: '1month' | '1year' | '2year' — emails the owner a confirmation link.
+  request: (durationKey, requester) => api.post('/license/request', { durationKey, requester }),
 }
