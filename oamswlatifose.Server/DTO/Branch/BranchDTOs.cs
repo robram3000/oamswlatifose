@@ -2,6 +2,13 @@ using System.ComponentModel.DataAnnotations;
 
 namespace oamswlatifose.Server.DTO.Branch
 {
+    /// <summary>A single geofence vertex / coordinate.</summary>
+    public class GeoPointDTO
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+
     /// <summary>A branch geofence as returned to clients.</summary>
     public class BranchDTO
     {
@@ -11,6 +18,10 @@ namespace oamswlatifose.Server.DTO.Branch
         public double Latitude { get; set; }
         public double Longitude { get; set; }
         public int RadiusMeters { get; set; }
+        /// <summary>"circle" or "polygon" — the geofence shape this branch validates against.</summary>
+        public string GeofenceType { get; set; } = "circle";
+        /// <summary>Polygon vertices (empty for circular branches).</summary>
+        public List<GeoPointDTO> Polygon { get; set; } = new();
         public bool IsActive { get; set; }
         public List<EmployeeRefDTO> AssignedEmployees { get; set; } = new();
     }
@@ -42,6 +53,13 @@ namespace oamswlatifose.Server.DTO.Branch
 
         [Range(10, 100000, ErrorMessage = "Radius must be between 10 and 100000 metres")]
         public int RadiusMeters { get; set; } = 100;
+
+        /// <summary>
+        /// Optional polygon geofence. When 3 or more points are supplied the branch validates by
+        /// point-in-polygon instead of radius; <see cref="Latitude"/>/<see cref="Longitude"/> are
+        /// then treated as the map centre (the service recomputes them to the polygon centroid).
+        /// </summary>
+        public List<GeoPointDTO> Polygon { get; set; } = new();
 
         public bool IsActive { get; set; } = true;
 

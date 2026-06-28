@@ -4,6 +4,7 @@ import { parseCsvImport, downloadImportTemplate } from '../../lib/export'
 import { getCurrentLocation } from '../../lib/geo'
 import { Icons, Sparkline, statusColor, statusBadge, locationBadge } from '../../lib/ui'
 import MonitoringTable from './MonitoringTable'
+import AttendanceMap from './AttendanceMap'
 import ScheduleEditor from './ScheduleEditor'
 import BranchEditor from './BranchEditor'
 import UserManager from './UserManager'
@@ -620,6 +621,9 @@ export default function AttendanceConsole({ user, onSignOut }) {
                       { key: 'hoursWorkedFormatted', label: 'Hrs', num: true, render: (r) => r.hoursWorkedFormatted || <span className="muted">—</span> },
                     ]}
                   />
+
+                  {/* ── Map-based location visualization ── */}
+                  <AttendanceMap rows={teamRows} dateLabel={teamDate} />
 
                   {/* ── Pending verification requests ── */}
                   <div className="panel" style={{ marginTop: 16 }}>

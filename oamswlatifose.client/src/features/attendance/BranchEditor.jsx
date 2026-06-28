@@ -3,8 +3,12 @@ import { branchApi, usersApi } from '../../lib/api'
 import { getCurrentLocation } from '../../lib/geo'
 import { Icons } from '../../lib/ui'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
+import BranchMap from './BranchMap'
 
-const EMPTY = { id: null, name: '', address: '', latitude: '', longitude: '', radiusMeters: 100, isActive: true, employeeIds: [] }
+const EMPTY = {
+  id: null, name: '', address: '', latitude: '', longitude: '', radiusMeters: 100,
+  isActive: true, employeeIds: [], geofenceType: 'circle', polygon: [],
+}
 
 function BranchFormModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(initial)
@@ -54,8 +58,22 @@ function BranchFormModal({ initial, onSave, onClose }) {
   const submit = async () => {
     setNotice(null)
     if (!form.name.trim()) { setNotice('Branch name is required.'); return }
-    const lat = parseFloat(form.latitude), lng = parseFloat(form.longitude)
-    if (Number.isNaN(lat) || Number.isNaN(lng)) { setNotice('Enter valid latitude and longitude.'); return }
+
+    const isPolygon = form.geofenceType === 'polygon'
+    const polygon = form.polygon || []
+    if (isPolygon && polygon.length < 3) {
+      setNotice('Draw a work zone with at least 3 points on the map.'); return
+    }
+
+    // Circle branches need an explicit centre; polygon branches derive it from the vertices.
+    let lat = parseFloat(form.latitude), lng = parseFloat(form.longitude)
+    if (isPolygon) {
+      lat = polygon.reduce((s, p) => s + p.latitude, 0) / polygon.length
+      lng = polygon.reduce((s, p) => s + p.longitude, 0) / polygon.length
+    } else if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      setNotice('Enter valid latitude and longitude (or click the map to set the centre).'); return
+    }
+
     setSaving(true)
     const res = await branchApi.set({
       id: form.id || undefined,
@@ -64,6 +82,7 @@ function BranchFormModal({ initial, onSave, onClose }) {
       latitude: lat,
       longitude: lng,
       radiusMeters: Number(form.radiusMeters) || 100,
+      polygon: isPolygon ? polygon : [],
       isActive: !!form.isActive,
       employeeIds: form.employeeIds,
     })
@@ -73,6 +92,12 @@ function BranchFormModal({ initial, onSave, onClose }) {
     } else {
       setNotice(res.message || 'Could not save branch.')
     }
+  }
+
+  // Numeric centre for the map (NaN-safe), so the marker tracks the lat/lng fields.
+  const mapCenter = {
+    lat: parseFloat(form.latitude),
+    lng: parseFloat(form.longitude),
   }
 
   const handleKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -104,26 +129,73 @@ function BranchFormModal({ initial, onSave, onClose }) {
           </div>
         </div>
 
-        <div className="fieldRow" style={{ flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
-          <div className="field" style={{ flex: '1 1 140px' }}>
-            <label>Latitude *</label>
-            <input className="input" value={form.latitude} onChange={(e) => set('latitude', e.target.value)} placeholder="14.5995" />
-          </div>
-          <div className="field" style={{ flex: '1 1 140px' }}>
-            <label>Longitude *</label>
-            <input className="input" value={form.longitude} onChange={(e) => set('longitude', e.target.value)} placeholder="120.9842" />
-          </div>
-          <div className="field" style={{ flex: '0 1 120px' }}>
-            <label>Radius (m)</label>
-            <input type="number" min="10" className="input" value={form.radiusMeters}
-              onChange={(e) => set('radiusMeters', e.target.value)} />
-          </div>
-          <div className="field" style={{ flex: '0 0 auto', justifyContent: 'flex-end', paddingTop: 22 }}>
-            <button className="btnGhost" style={{ whiteSpace: 'nowrap' }} onClick={useMyLocation} disabled={locating}>
-              {Icons.pin}{locating ? ' Locating…' : ' My location'}
+        {/* Geofence shape selector */}
+        <div className="field" style={{ marginTop: 12 }}>
+          <label>Geofence type</label>
+          <div className="rangeRow" style={{ gap: 8 }}>
+            <button
+              type="button"
+              className={`chip ${form.geofenceType === 'circle' ? 'chip--active' : ''}`}
+              onClick={() => set('geofenceType', 'circle')}
+            >
+              {form.geofenceType === 'circle' && '✓ '}Circle (radius)
             </button>
+            <button
+              type="button"
+              className={`chip ${form.geofenceType === 'polygon' ? 'chip--active' : ''}`}
+              onClick={() => set('geofenceType', 'polygon')}
+            >
+              {form.geofenceType === 'polygon' && '✓ '}Polygon (custom area)
+            </button>
+            {form.geofenceType === 'polygon' && (form.polygon?.length > 0) && (
+              <button type="button" className="linkBtn" style={{ marginLeft: 'auto' }} onClick={() => set('polygon', [])}>
+                Clear &amp; redraw
+              </button>
+            )}
           </div>
         </div>
+
+        <div className="fieldRow" style={{ flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
+          {form.geofenceType === 'circle' ? (
+            <>
+              <div className="field" style={{ flex: '1 1 140px' }}>
+                <label>Latitude *</label>
+                <input className="input" value={form.latitude} onChange={(e) => set('latitude', e.target.value)} placeholder="14.5995" />
+              </div>
+              <div className="field" style={{ flex: '1 1 140px' }}>
+                <label>Longitude *</label>
+                <input className="input" value={form.longitude} onChange={(e) => set('longitude', e.target.value)} placeholder="120.9842" />
+              </div>
+              <div className="field" style={{ flex: '0 1 120px' }}>
+                <label>Radius (m)</label>
+                <input type="number" min="10" className="input" value={form.radiusMeters}
+                  onChange={(e) => set('radiusMeters', e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: '0 0 auto', justifyContent: 'flex-end', paddingTop: 22 }}>
+                <button className="btnGhost" style={{ whiteSpace: 'nowrap' }} onClick={useMyLocation} disabled={locating}>
+                  {Icons.pin}{locating ? ' Locating…' : ' My location'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+              {form.polygon?.length >= 3
+                ? `Work zone defined with ${form.polygon.length} points. Drag the vertices on the map to fine-tune.`
+                : 'Use the map below to draw the authorized work area.'}
+            </p>
+          )}
+        </div>
+
+        {/* Interactive geofence map */}
+        <BranchMap
+          geofenceType={form.geofenceType}
+          center={mapCenter}
+          radius={Number(form.radiusMeters) || 100}
+          polygon={form.polygon}
+          onCenterChange={(lat, lng) => setForm((f) => ({ ...f, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }))}
+          onRadiusChange={(m) => set('radiusMeters', m)}
+          onPolygonChange={(pts) => set('polygon', pts)}
+        />
 
         <label className="topbar__user" style={{ gap: 6, marginTop: 8 }}>
           <input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} />
@@ -221,6 +293,8 @@ export default function BranchEditor({ onChanged }) {
       radiusMeters: b.radiusMeters,
       isActive: b.isActive,
       employeeIds: (b.assignedEmployees || []).map((e) => e.employeeId),
+      geofenceType: b.geofenceType || (b.polygon?.length >= 3 ? 'polygon' : 'circle'),
+      polygon: b.polygon || [],
     })
   }
 
@@ -253,7 +327,7 @@ export default function BranchEditor({ onChanged }) {
               <th className="th">Name</th>
               <th className="th">Address</th>
               <th className="th">Employees</th>
-              <th className="th thNum">Radius (m)</th>
+              <th className="th">Geofence</th>
               <th className="th">Active</th>
               <th className="th" />
             </tr>
@@ -275,7 +349,11 @@ export default function BranchEditor({ onChanged }) {
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
                   )}
                 </td>
-                <td className="td tdNum">{b.radiusMeters}</td>
+                <td className="td" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {(b.geofenceType === 'polygon' || b.polygon?.length >= 3)
+                    ? `Polygon · ${b.polygon?.length || 0} pts`
+                    : `Circle · ${b.radiusMeters} m`}
+                </td>
                 <td className="td">{b.isActive ? 'Yes' : 'No'}</td>
                 <td className="td" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button className="linkBtn" onClick={() => openEdit(b)}>Edit</button>

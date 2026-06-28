@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using oamswlatifose.Server.DTO.Branch;
 using oamswlatifose.Server.Model;
@@ -63,10 +64,25 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
 
                 branch.Name = dto.Name.Trim();
                 branch.Address = dto.Address?.Trim();
-                branch.Latitude = dto.Latitude;
-                branch.Longitude = dto.Longitude;
                 branch.RadiusMeters = dto.RadiusMeters;
                 branch.IsActive = dto.IsActive;
+
+                // Polygon branch when ≥3 vertices are supplied; otherwise a circular branch.
+                var polygon = dto.Polygon ?? new List<GeoPointDTO>();
+                if (polygon.Count >= 3)
+                {
+                    branch.PolygonJson = SerializePolygon(polygon);
+                    // Keep the stored centre as the polygon centroid so maps frame it correctly.
+                    var (cLat, cLng) = Centroid(polygon);
+                    branch.Latitude = cLat;
+                    branch.Longitude = cLng;
+                }
+                else
+                {
+                    branch.PolygonJson = null;
+                    branch.Latitude = dto.Latitude;
+                    branch.Longitude = dto.Longitude;
+                }
 
                 await _db.SaveChangesAsync();
 
@@ -136,21 +152,42 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
             if (branches.Count == 0)
                 return new LocationResolutionDTO { OnSite = false, WorkLocation = "Outside" };
 
-            EMBranch nearest = null;
+            double lat = latitude.Value, lng = longitude.Value;
+
+            EMBranch nearest = null;        // closest centre, for the "Outside" distance readout
             double nearestDist = double.MaxValue;
+            EMBranch containing = null;     // first branch whose geofence actually contains the point
+            double containingDist = 0;
+
             foreach (var b in branches)
             {
-                var d = Haversine(latitude.Value, longitude.Value, b.Latitude, b.Longitude);
+                var d = Haversine(lat, lng, b.Latitude, b.Longitude);
                 if (d < nearestDist) { nearestDist = d; nearest = b; }
+
+                var polygon = DeserializePolygon(b.PolygonJson);
+                bool inside = polygon.Count >= 3
+                    ? PointInPolygon(lat, lng, polygon)   // polygon branch
+                    : d <= b.RadiusMeters;                // circular branch
+
+                if (inside && containing == null) { containing = b; containingDist = d; }
             }
 
-            var onSite = nearest != null && nearestDist <= nearest.RadiusMeters;
+            if (containing != null)
+            {
+                return new LocationResolutionDTO
+                {
+                    OnSite = true,
+                    BranchId = containing.Id,
+                    BranchName = containing.Name,
+                    WorkLocation = "Office",
+                    DistanceMeters = (int)Math.Round(containingDist),
+                };
+            }
+
             return new LocationResolutionDTO
             {
-                OnSite = onSite,
-                BranchId = onSite ? nearest.Id : (int?)null,
-                BranchName = onSite ? nearest.Name : null,
-                WorkLocation = onSite ? "Office" : "Outside",
+                OnSite = false,
+                WorkLocation = "Outside",
                 DistanceMeters = (int)Math.Round(nearestDist),
             };
         }
@@ -169,19 +206,72 @@ namespace oamswlatifose.Server.Services.Branch.Implementation
 
         private static double ToRad(double deg) => deg * Math.PI / 180.0;
 
-        private static BranchDTO ToDto(EMBranch b) => new()
+        /// <summary>
+        /// Ray-casting point-in-polygon test. Treats longitude as x and latitude as y; accurate for
+        /// the small areas a work-zone polygon covers (no spherical correction needed at that scale).
+        /// </summary>
+        private static bool PointInPolygon(double lat, double lng, List<GeoPointDTO> poly)
         {
-            Id = b.Id,
-            Name = b.Name,
-            Address = b.Address,
-            Latitude = b.Latitude,
-            Longitude = b.Longitude,
-            RadiusMeters = b.RadiusMeters,
-            IsActive = b.IsActive,
-            AssignedEmployees = b.Employees?
-                .Select(e => new EmployeeRefDTO { EmployeeId = e.Id, FullName = $"{e.FirstName} {e.LastName}" })
-                .OrderBy(e => e.FullName)
-                .ToList() ?? new(),
-        };
+            bool inside = false;
+            for (int i = 0, j = poly.Count - 1; i < poly.Count; j = i++)
+            {
+                double yi = poly[i].Latitude, xi = poly[i].Longitude;
+                double yj = poly[j].Latitude, xj = poly[j].Longitude;
+                bool intersects = ((yi > lat) != (yj > lat))
+                    && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+                if (intersects) inside = !inside;
+            }
+            return inside;
+        }
+
+        /// <summary>Average of the vertices — used as the polygon's map-centring point.</summary>
+        private static (double Lat, double Lng) Centroid(List<GeoPointDTO> poly)
+        {
+            double lat = 0, lng = 0;
+            foreach (var p in poly) { lat += p.Latitude; lng += p.Longitude; }
+            return (lat / poly.Count, lng / poly.Count);
+        }
+
+        // Polygon is persisted as a compact JSON array of [lat, lng] pairs.
+        private static string SerializePolygon(List<GeoPointDTO> poly) =>
+            JsonSerializer.Serialize(poly.Select(p => new[] { p.Latitude, p.Longitude }));
+
+        private static List<GeoPointDTO> DeserializePolygon(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new();
+            try
+            {
+                var raw = JsonSerializer.Deserialize<List<double[]>>(json);
+                return raw?
+                    .Where(p => p.Length >= 2)
+                    .Select(p => new GeoPointDTO { Latitude = p[0], Longitude = p[1] })
+                    .ToList() ?? new();
+            }
+            catch (JsonException)
+            {
+                return new();
+            }
+        }
+
+        private static BranchDTO ToDto(EMBranch b)
+        {
+            var polygon = DeserializePolygon(b.PolygonJson);
+            return new()
+            {
+                Id = b.Id,
+                Name = b.Name,
+                Address = b.Address,
+                Latitude = b.Latitude,
+                Longitude = b.Longitude,
+                RadiusMeters = b.RadiusMeters,
+                GeofenceType = polygon.Count >= 3 ? "polygon" : "circle",
+                Polygon = polygon,
+                IsActive = b.IsActive,
+                AssignedEmployees = b.Employees?
+                    .Select(e => new EmployeeRefDTO { EmployeeId = e.Id, FullName = $"{e.FirstName} {e.LastName}" })
+                    .OrderBy(e => e.FullName)
+                    .ToList() ?? new(),
+            };
+        }
     }
 }
