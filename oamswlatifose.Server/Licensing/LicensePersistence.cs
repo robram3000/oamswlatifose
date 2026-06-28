@@ -32,7 +32,7 @@ namespace oamswlatifose.Server.Licensing
                 {
                     var json = File.ReadAllText(_filePath);
                     var state = JsonSerializer.Deserialize<DeploymentState>(json);
-                    if (state is { FirstRunDate: not default(DateTime) })
+                    if (state is not null && state.FirstRunDate != default)
                         return state;
                 }
                 catch (Exception ex)
